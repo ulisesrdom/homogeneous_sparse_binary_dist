@@ -2,7 +2,7 @@
 import numpy as np
 import functions_generic as f_gen
 import functions_sampling as f_samp
-import functions_convergence as f_conv
+import functions_numerical as f_nume
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -383,7 +383,7 @@ def plot_visual_convergence_test( VIS_CONV_T, DISTR_TYPE, N_P, BASE_PARAMS,\
    FACT_k       = np.ones((N_P-1,),dtype=np.float64)
    FACT_k       = FACT_k.copy(order='C')
    
-   f_conv.factorial_array( FACT_k, N_P-1 ) # <-- stores factorials up to N_P-1
+   f_nume.factorial_array( FACT_k, N_P-1 ) # <-- stores factorials up to N_P-1
    
    # --------------------------------------------------------------------------------
    # --------------------------------------------------------------------------------
@@ -398,8 +398,8 @@ def plot_visual_convergence_test( VIS_CONV_T, DISTR_TYPE, N_P, BASE_PARAMS,\
          for np_i in range(N_MIN,N_P):
             Q_r    = np.zeros((N_P,),dtype=np.float32)
             Q_r    = Q_r.copy(order='C')
-            f_conv.obtain_theta( THETA, FACT_k, np_i-1, DISTR_TYPE, f, m, 0.0 )
-            f_conv.Q_polynomial( Q_r, THETA, FACT_k, np_i )
+            f_nume.obtain_theta( THETA, FACT_k, np_i-1, DISTR_TYPE, f, m, 0.0 )
+            f_nume.Q_polynomial( Q_r, THETA, FACT_k, np_i )
             cell_s = float(N_P / np_i)
             for ci in range(0,np_i-1):
                Abs_DISCR_CONTINUOUS[np_i-N_MIN,int(ci*cell_s):int((ci+1)*cell_s)] = np.abs( Q_r[ci] + f*np.log( 1.0 + float(ci) / float(np_i) ) )
@@ -437,8 +437,8 @@ def plot_visual_convergence_test( VIS_CONV_T, DISTR_TYPE, N_P, BASE_PARAMS,\
          for np_i in range(N_MIN,N_P):
             Q_r    = np.zeros((N_P,),dtype=np.float32)
             Q_r    = Q_r.copy(order='C')
-            f_conv.obtain_theta( THETA, FACT_k, np_i-1, DISTR_TYPE, f, 0, tau )
-            f_conv.Q_polynomial( Q_r, THETA, FACT_k, np_i )
+            f_nume.obtain_theta( THETA, FACT_k, np_i-1, DISTR_TYPE, f, 0, tau )
+            f_nume.Q_polynomial( Q_r, THETA, FACT_k, np_i )
             cell_s = float(N_P / np_i)
             for ci in range(0,np_i-1):
                Abs_DISCR_CONTINUOUS[np_i-N_MIN,int(ci*cell_s):int((ci+1)*cell_s)] = np.abs( Q_r[ci] -f*( 1. / (1.0 + tau*(float(ci) / float(np_i))) - 1.0 ) )
@@ -483,8 +483,8 @@ def plot_visual_convergence_test( VIS_CONV_T, DISTR_TYPE, N_P, BASE_PARAMS,\
          for np_i in range(N_MIN,N_P):
             Q_r    = np.zeros((N_P,),dtype=np.float32)
             Q_r    = Q_r.copy(order='C')
-            f_conv.obtain_theta( THETA, FACT_k, np_i-1, DISTR_TYPE, f, m, 0.0 )
-            f_conv.Q_polynomial( Q_r, THETA, FACT_k, np_i )
+            f_nume.obtain_theta( THETA, FACT_k, np_i-1, DISTR_TYPE, f, m, 0.0 )
+            f_nume.Q_polynomial( Q_r, THETA, FACT_k, np_i )
             
             # Obtain probability mass function values
             for ci in range(0,np_i):
@@ -536,8 +536,8 @@ def plot_visual_convergence_test( VIS_CONV_T, DISTR_TYPE, N_P, BASE_PARAMS,\
          for np_i in range(N_MIN,N_P):
             Q_r    = np.zeros((N_P,),dtype=np.float32)
             Q_r    = Q_r.copy(order='C')
-            f_conv.obtain_theta( THETA, FACT_k, np_i-1, DISTR_TYPE, f, 0, tau )
-            f_conv.Q_polynomial( Q_r, THETA, FACT_k, np_i )
+            f_nume.obtain_theta( THETA, FACT_k, np_i-1, DISTR_TYPE, f, 0, tau )
+            f_nume.Q_polynomial( Q_r, THETA, FACT_k, np_i )
             
             # Obtain probability mass function values
             for ci in range(0,np_i):
@@ -686,7 +686,7 @@ def plot_histogram( SAMPLING_TYPE, DISTR_TYPE, N_SAMP,N_BINS,N, BASE_PARAMS,\
          m         = 1
          # Draw samples from discrete binary version of polylogarithmic distribution
          # with Gibbs sampling (limited to m=1)
-         f_samp.GibbsSampling_polylogarithmic( r_samples, 10, N, N_SAMP, f )
+         f_samp.GibbsSampling_polylogarithmic_hist( r_samples, 10, N, N_SAMP, f )
          
       else:
          # -----------------------------------------------------------------------------
@@ -695,7 +695,7 @@ def plot_histogram( SAMPLING_TYPE, DISTR_TYPE, N_SAMP,N_BINS,N, BASE_PARAMS,\
          tau       = float(B_PARAMS[1])
          # Draw samples from the discrete binary version of shifted-geometric
          # distribution with Gibbs sampling
-         f_samp.GibbsSampling_shifted_geometric( r_samples, 10, N, N_SAMP, f, tau )
+         f_samp.GibbsSampling_shifted_geometric_hist( r_samples, 10, N, N_SAMP, f, tau )
       
    # Show plot with the histogram of the samples
    # --------------------------------------------------------------------------------
@@ -766,5 +766,34 @@ def plot_histogram( SAMPLING_TYPE, DISTR_TYPE, N_SAMP,N_BINS,N, BASE_PARAMS,\
          fig.savefig(OUT_FOLDER+'/HIST_SAMPLES_POLYLOGARITHM_m'+str(m)+'_f'+str(f)+str_suffix+'.png')
       else :
          fig.savefig(OUT_FOLDER+'/HIST_SAMPLES_SHIFTED_GEOMETRIC_tau'+str(tau)+'_f'+str(f)+str_suffix+'.png')
+   
+   return None
+
+# -----------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------
+# Function to fit the model parameters from a selected distribution to a given dataset under the
+# maximum likelihood principle. This function also shows a plot of the fitted model on top of the
+# data histogram.
+# Parameters:
+# ---DISTR_TYPE: integer value to select a distribution to sample from. The options are:
+#                polylogarithmic exponential (1); shifted-geometric exponential (2);
+#                polylogarithmic and shifted-geometric exponential for joint plot of
+#                the histograms (3).
+# ---N_BINS    : integer value with the number of bins for each histogram.
+# ---BASE_PARAMS: string with comma separated baseline parameter values for each
+#                distribution. For DISTR_TYPE=1 the format is 'f,m,M', where f>0 is the
+#                sparsity inducing parameter and the integer m>0 is the polylogarithmic
+#                order and M is the number of terms to use for the m>1 approximation.
+#                For DISTR_TYPE=2 the format is 'f,tau' where f is as in the DISTR_TYPE=1
+#                case and 0<tau<1 refers to the tau shifted-geometric parameter.
+# ---OUT_FOLDER: string value with the output folder, where the png image(s) of
+#                the plot(s) is(are) required to be stored.
+# ---PPARAM_LST: list with plotting parameters. The elements of the list are:
+#                COLOR_LIST,LINE_STYLES and DPI, each of which consist of a comma-separated
+#                string with exception of the integer DPI. The parameter description are
+#                available in the file main.py.
+# Returns:
+# ---No return value. The image of the plot is stored in the OUT_FOLDER output folder.
+def plot_model_fit( DISTR_TYPE, N_P, BASE_PARAMETERS, OUT_FOLDER, PLOT_PARAM_LIST ):
    
    return None

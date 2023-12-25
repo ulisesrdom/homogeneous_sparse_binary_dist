@@ -10,7 +10,7 @@ import main_plots as m_plots
 ap = argparse.ArgumentParser()
 
 # ---------Parameters to select a condition type ---
-ap.add_argument("-OPT"       ,  "--OPTION", required = True, help="Probability density function plots (1); Histogram plots from simulated samples (2); Numerical convergence visualization plots (3).")
+ap.add_argument("-OPT"       ,  "--OPTION", required = True, help="Probability density function plots (1); Histogram plots from simulated samples (2); Numerical convergence visualization plots (3); Data fitting and visualization of fitted model (4).")
 ap.add_argument("-SAMP_T"    ,  "--SAMPLING_TYPE", required = True, help="Continuous population rate distributions (1); N-dimensional binary neurons distributions (2).")
 ap.add_argument("-VIS_C_T"   ,  "--VISUAL_CONVERGENCE_TEST", required = True, help="Polynomial Q_N(r_N; THETA_N) (1); Probability mass functions P(r_N; THETA_N) (2).")
 ap.add_argument("-DIST_T"    ,  "--DISTRIBUTION_TYPE", required = True, help="Polylogarithmic exponential (1); Shifted-geometric exponential (2); Polylogarithmic and shifted-geometric exp. (for same plot comparison) (3).")
@@ -54,8 +54,11 @@ elif OPTION == 2 :
    # Function call to plot histograms after simulation of random variables from a selected distribution
    m_plots.plot_histogram( SAMPLING_TYPE, DISTR_TYPE, N_SAMP,N_P,N, BASE_PARAMETERS,\
                            OUT_FOLDER, PLOT_PARAM_LIST )
-else:
+elif OPTION == 3:
    # Function call to plot the absolute difference between continuous functions in the limit
    # and their discrete approximation as the number of neurons N vary
    m_plots.plot_visual_convergence_test( VISUAL_CONV_TEST, DISTR_TYPE, N_P, BASE_PARAMETERS,\
                                          OUT_FOLDER, PLOT_PARAM_LIST )
+else:
+   # Function call to fit the model parameters to a given dataset under the maximum likelihood principle
+   m_plots.plot_model_fit( DISTR_TYPE, N_P, BASE_PARAMETERS, OUT_FOLDER, PLOT_PARAM_LIST )

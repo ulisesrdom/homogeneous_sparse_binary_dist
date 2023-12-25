@@ -1,4 +1,5 @@
-// Declaration of the c code sampling functions.
+// Declaration of all the c code functions for the computations involved
+// at the learning stage of the Bayesian model.
 // Each function is described in the file "c_functions_sampling.c".
 // -------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------------------

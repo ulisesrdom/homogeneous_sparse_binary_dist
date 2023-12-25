@@ -1,4 +1,5 @@
 import numpy as np
+import functions_sampling as f_samp
 from libc.stdio cimport printf
 from cython.parallel import prange
 from cython import boundscheck, wraparound
@@ -220,3 +221,102 @@ def Q_polynomial( np.ndarray[float,ndim=1,mode="c"] Q,\
 
 # -----------------------------------------------------------------------------------------------
 # -----------------------------------------------------------------------------------------------
+# Function to fit the polylogarithmic exponential distr. model to a given dataset of binary
+# spikes (assummed to come from spontaneous neural activity).
+# Parameters:
+# ---X        : float flattened array with Ns binary samples from real spiking data, each of
+#               size N.
+# ---N        : integer value with the size of the neural population in each sample.
+# ---Ns       : integer value with the number of samples in the binary data.
+# ---M        : integer value with the number of Gibbs samples to produce for the derivative
+#               of the normalization function with respect to the f parameter.
+# ---eta      : float value with the learning rate for locally optimizing over the f parameter.
+# ---f_0      : float value with the initial value for the sparsity inducing parameter.
+# ---m_min    : integer value with the minimum value for the grid-search range of the integer
+#               order of the polylogarithmic function.
+# ---m_max    : integer value with the maximum value for the grid-search range of the integer
+#               order of the polylogarithmic function.
+# ---MAX_ITE  : integer value with the maximum number of optimization iterations.
+# ---T        : integer value with the maximum number of local optimization iterations.
+# Returns:
+# ---Pair of fitted parameters: f and m, where f is the sparsity inducing parameter and
+#    m is the integer order parameter of the polylogarithmic function.
+@boundscheck(False)
+@wraparound(False)
+def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns, int M,
+                                float eta, float f_0, int m_min, int m_max, int MAX_ITE, int T ):
+   cdef:
+      int ite,t,m,m_p,r,i
+      float f,s1,s2
+   cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
+   cdef float[:] lZ_der_wrt_f     = np.zeros((M,),dtype=np.float32)
+   cdef int[:]   X_SAMPLES        = np.zeros((M*N,),dtype=np.int32)
+   # Initialize parameters
+   f         = f_0
+   m         = m_min
+   # Iterative optimization
+   for ite in range(1,MAX_ITE+1):
+      # Locally optimize for the sparsity inducing parameter f given m
+      # ---------------------------------------------------------------------------
+      for t in range(1,T+1):
+         for i in range(0,Ns):
+            ll_batch[i]     = 0.0
+         for i in range(0,M):
+            lZ_der_wrt_f[i] = 0.0
+         # Parallel computation of first part of log-likelihood derivative
+         for r in prange(0,Ns,nogil=True,schedule='static',num_threads=4):
+            # Serial ordered computation
+            c_der_ll_poly_wrt_f_p1( r, &ll_batch[0], m, &X[0], N, Ns )
+         # Collapse parallel batch results
+         s1  = 0.0
+         for r in range(0,Ns):
+           s1= s1 + ll_der_wrt_f_p1[ r ]
+         s1  = s1 / float( Ns )
+         # Obtain M Gibbs samples for the second part of the derivative
+         f_samp.GibbsSampling_polylogarithmic( X_SAMPLES, 11, N, M, f )
+         
+         # Parallel computation of second part of log-likelihood derivative
+         for r in prange(0,M,nogil=True,schedule='static',num_threads=4):
+            # Serial ordered computation
+            c_der_Z_poly_wrt_f( r, &lZ_der_wrt_f[0], m, &X_SAMPLES[0], N, Ns )
+         # Collapse parallel batch results
+         s2  = 0.0
+         for r in range(0,M):
+           s2= s2 + lZ_der_wrt_f[ r ]
+         s2  = s2 / float( M )
+         f   = f + (eta*(-s1-s2))
+      
+      # Locally optimize (grid search) for the m polylogarithmic parameter given f
+      # ---------------------------------------------------------------------------
+      s2     = float('-inf')
+      for m_p in range(m_min,m_max+1):
+         # Parallel computation of first part of log-likelihood derivative
+         for r in prange(0,Ns,nogil=True,schedule='static',num_threads=4):
+            # Serial ordered computation
+            c_log_likelihood_poly_r( r, &X[0], &ll_batch[0], f,m_p,  N )
+         # Collapse parallel batch results
+         s1  = 0.0
+         for r in range(0,Ns):
+           s1= s1 + ll_batch[ r ]
+         if s1 > s2 :
+           s2= s1
+           m = m_p
+      
+   return f,m
+
+# -----------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------
+
+# Declaration of all c code functions called from within this Cython file.
+# The header function declaration file must be located in the extern from
+# "path_to_c_header_file.h" defined below.
+# -----------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------
+cdef extern from "c/c_functions_numerical.h" nogil:
+   
+   void c_der_ll_poly_wrt_f_p1( int r, float *ll_batch, int m, \
+                                int *X, int N, int Ns )
+   void c_der_Z_poly_wrt_f( int r, float *lZ_der_wrt_f, int m, \
+                            int *X, int N, int Ns )
+   void c_log_likelihood_poly_r( int r, int *X, float *ll_batch, \
+                                 float f, float m,  int N )

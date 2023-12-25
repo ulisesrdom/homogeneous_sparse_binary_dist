@@ -106,22 +106,22 @@ def F_shifted_geometric_eval( np.ndarray[float,ndim=1,mode="c"] F_vals, \
 
 # -----------------------------------------------------------------------------------------------
 # -----------------------------------------------------------------------------------------------
-# Function to apply the Gibbs Sampling Method to draw samples from the discrete binary
-# version of the polylogarithmic exponential distribution.
+# Function to apply the Gibbs Sampling Method to draw a histogram of the samples from the
+# discrete binary version of the polylogarithmic exponential distribution.
 # Parameters:
 # ---n_samples: integer array where the N_SAMP random samples are to be stored.
 #               Each sample is an integer from 0 to N, indicating the number of active
 #               binary neurons in the population.
 # ---NITE     : integer value with the number of simulations per sample (for burn-in period).
 # ---N        : integer value with the number of neurons in the population.
-# ---N_SAMP   : integer value with the number of random samples to store in r_samples.
+# ---N_SAMP   : integer value with the number of random samples to store in n_samples.
 # ---F        : float value with the sparsity inducing parameter.
 # Returns:
-# ---No return value. The random samples are stored in the n_samples array.
+# ---No return value. The histogram is stored in the n_samples array.
 @boundscheck(False)
 @wraparound(False)
-def GibbsSampling_polylogarithmic( np.ndarray[int,ndim=1,mode="c"] n_samples, \
-                                   int NITE, int N, int N_SAMP, float F ):
+def GibbsSampling_polylogarithmic_hist( np.ndarray[int,ndim=1,mode="c"] n_samples, \
+                                        int NITE, int N, int N_SAMP, float F ):
    cdef:
       int r,j,n
    cdef int[:] X_SAMPLES = np.zeros((N_SAMP*N,),dtype=np.int32)
@@ -141,7 +141,38 @@ def GibbsSampling_polylogarithmic( np.ndarray[int,ndim=1,mode="c"] n_samples, \
 # -----------------------------------------------------------------------------------------------
 # -----------------------------------------------------------------------------------------------
 # Function to apply the Gibbs Sampling Method to draw samples from the discrete binary
-# version of the shifted-geometric exponential distribution.
+# version of the polylogarithmic exponential distribution.
+# Parameters:
+# ---X_SAMPLES: integer array where the N_SAMP random samples are to be stored.
+#               Each sample is a binary vector of size N (stored consecutively).
+# ---NITE     : integer value with the number of simulations per sample (for burn-in period).
+# ---N        : integer value with the number of neurons in the population.
+# ---N_SAMP   : integer value with the number of random samples to store in n_samples.
+# ---F        : float value with the sparsity inducing parameter.
+# Returns:
+# ---No return value. The random samples are stored in the X_SAMPLES array.
+@boundscheck(False)
+@wraparound(False)
+def GibbsSampling_polylogarithmic( np.ndarray[int,ndim=1,mode="c"] X_SAMPLES, \
+                                   int NITE, int N, int N_SAMP, float F ):
+   cdef:
+      int r,j,n
+   printf("Sampling from %d-dimensional binary distribution\n",N)
+   # Parallel simulation of each sample
+   for r in prange(0,N_SAMP,nogil=True,schedule='static',num_threads=4):
+      # Serial ordered computation
+      c_polylogarithmic_samp( r, NITE, &X_SAMPLES[0], N, F )
+   # Compute number of active neurons per sample and store
+   for r in range(0,N_SAMP):
+      n       = 0
+      for j in range(0,N):
+         n    = n + X_SAMPLES[ r*N + j ]
+   return None
+
+# -----------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------
+# Function to apply the Gibbs Sampling Method to draw a histogram of the samples from the
+# discrete binary version of the shifted-geometric exponential distribution.
 # Parameters:
 # ---n_samples: integer array where the N_SAMP random samples are to be stored.
 #               Each sample is an integer from 0 to N, indicating the number of active
@@ -155,8 +186,8 @@ def GibbsSampling_polylogarithmic( np.ndarray[int,ndim=1,mode="c"] n_samples, \
 # ---No return value. The random samples are stored in the n_samples array.
 @boundscheck(False)
 @wraparound(False)
-def GibbsSampling_shifted_geometric( np.ndarray[int,ndim=1,mode="c"] n_samples, \
-                                     int NITE, int N, int N_SAMP, float F, float tau ):
+def GibbsSampling_shifted_geometric_hist( np.ndarray[int,ndim=1,mode="c"] n_samples, \
+                                          int NITE, int N, int N_SAMP, float F, float tau ):
    cdef:
       int r,j,n
    cdef int[:] X_SAMPLES = np.zeros((N_SAMP*N,),dtype=np.int32)
@@ -171,6 +202,38 @@ def GibbsSampling_shifted_geometric( np.ndarray[int,ndim=1,mode="c"] n_samples, 
       for j in range(0,N):
          n    = n + X_SAMPLES[ r*N + j ]
       n_samples[ r ] = n
+   return None
+
+# -----------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------
+# Function to apply the Gibbs Sampling Method to draw samples from the discrete binary
+# version of the shifted-geometric exponential distribution.
+# Parameters:
+# ---X_SAMPLES: integer array where the N_SAMP random samples are to be stored.
+#               Each sample is a binary vector of size N (stored consecutively).
+# ---NITE     : integer value with the number of simulations per sample (for burn-in period).
+# ---N        : integer value with the number of neurons in the population.
+# ---N_SAMP   : integer value with the number of random samples to store in r_samples.
+# ---F        : float value with the sparsity inducing parameter.
+# ---tau      : float value with the shifted-geometric exponential tau parameter.
+# Returns:
+# ---No return value. The random samples are stored in the n_samples array.
+@boundscheck(False)
+@wraparound(False)
+def GibbsSampling_shifted_geometric( np.ndarray[int,ndim=1,mode="c"] X_SAMPLES, \
+                                     int NITE, int N, int N_SAMP, float F, float tau ):
+   cdef:
+      int r,j,n
+   printf("Sampling from %d-dimensional binary distribution\n",N)
+   # Parallel simulation of each sample
+   for r in prange(0,N_SAMP,nogil=True,schedule='static',num_threads=4):
+      # Serial ordered computation
+      c_shifted_geometric_samp( r, NITE, &X_SAMPLES[0], N, F, tau )
+   # Compute number of active neurons per sample and store
+   for r in range(0,N_SAMP):
+      n       = 0
+      for j in range(0,N):
+         n    = n + X_SAMPLES[ r*N + j ]
    return None
 
 # -----------------------------------------------------------------------------------------------
