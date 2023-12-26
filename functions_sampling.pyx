@@ -115,13 +115,16 @@ def F_shifted_geometric_eval( np.ndarray[float,ndim=1,mode="c"] F_vals, \
 # ---NITE     : integer value with the number of simulations per sample (for burn-in period).
 # ---N        : integer value with the number of neurons in the population.
 # ---N_SAMP   : integer value with the number of random samples to store in n_samples.
+# ---M_TERMS  : integer value with the number of terms to consider in the alternating series
+#               for the case of m > 1. This value should be in [3,4,5,...,N].
 # ---F        : float value with the sparsity inducing parameter.
+# ---m        : integer value indicating the order of the polylogarithmic function.
 # Returns:
 # ---No return value. The histogram is stored in the n_samples array.
 @boundscheck(False)
 @wraparound(False)
 def GibbsSampling_polylogarithmic_hist( np.ndarray[int,ndim=1,mode="c"] n_samples, \
-                                        int NITE, int N, int N_SAMP, float F ):
+                                        int NITE, int N, int N_SAMP, int M_TERMS, float F, int m ):
    cdef:
       int r,j,n
    cdef int[:] X_SAMPLES = np.zeros((N_SAMP*N,),dtype=np.int32)
@@ -129,7 +132,7 @@ def GibbsSampling_polylogarithmic_hist( np.ndarray[int,ndim=1,mode="c"] n_sample
    # Parallel simulation of each sample
    for r in prange(0,N_SAMP,nogil=True,schedule='static',num_threads=4):
       # Serial ordered computation
-      c_polylogarithmic_samp( r, NITE, &X_SAMPLES[0], N, F )
+      c_polylogarithmic_samp( r, NITE, &X_SAMPLES[0], N,M_TERMS, F,m )
    # Compute number of active neurons per sample and store
    for r in range(0,N_SAMP):
       n       = 0
@@ -148,20 +151,23 @@ def GibbsSampling_polylogarithmic_hist( np.ndarray[int,ndim=1,mode="c"] n_sample
 # ---NITE     : integer value with the number of simulations per sample (for burn-in period).
 # ---N        : integer value with the number of neurons in the population.
 # ---N_SAMP   : integer value with the number of random samples to store in n_samples.
+# ---M_TERMS  : integer value with the number of terms to consider in the alternating series
+#               for the case of m > 1. This value should be in [3,4,5,...,N].
 # ---F        : float value with the sparsity inducing parameter.
+# ---m        : integer value indicating the order of the polylogarithmic function.
 # Returns:
 # ---No return value. The random samples are stored in the X_SAMPLES array.
 @boundscheck(False)
 @wraparound(False)
 def GibbsSampling_polylogarithmic( np.ndarray[int,ndim=1,mode="c"] X_SAMPLES, \
-                                   int NITE, int N, int N_SAMP, float F ):
+                                   int NITE, int N, int N_SAMP, int M_TERMS, float F, int m ):
    cdef:
       int r,j,n
    printf("Sampling from %d-dimensional binary distribution\n",N)
    # Parallel simulation of each sample
    for r in prange(0,N_SAMP,nogil=True,schedule='static',num_threads=4):
       # Serial ordered computation
-      c_polylogarithmic_samp( r, NITE, &X_SAMPLES[0], N, F )
+      c_polylogarithmic_samp( r, NITE, &X_SAMPLES[0], N,M_TERMS, F,m )
    # Compute number of active neurons per sample and store
    for r in range(0,N_SAMP):
       n       = 0
@@ -285,7 +291,7 @@ def InverseTransform( np.ndarray[float,ndim=1,mode="c"] r_samples,\
 cdef extern from "c/c_functions_sampling.h" nogil:
    
    void c_initRandom()
-   void c_polylogarithmic_samp( int r, int NITE, \
-                                int *X, int N, float F )
-   void c_shifted_geometric_samp( int r, int NITE, \
-                                  int *X, int N, float F, float tau )
+   void c_polylogarithmic_samp( int r, int NITE, int *X,\
+                                int N, int M_TERMS, float F, int m )
+   void c_shifted_geometric_samp( int r, int NITE, int *X,\
+                                  int N, float F, float tau )

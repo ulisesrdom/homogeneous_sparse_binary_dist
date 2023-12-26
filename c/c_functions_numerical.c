@@ -21,18 +21,18 @@
 //    void    (no return value).
 // -----------------------------------------------------------------------------------------------
 void c_der_ll_poly_wrt_f_part( int i, float *ll_batch, int m, int *X, int N ){
-   int k;
-   float sum_x_N,s,si;
+   int k,si;
+   float sum_x_N,s;
    sum_x_N     = 0.0 ;
    for( k = 0; k < N ; k++ ){
 	   sum_x_N = sum_x_N + ((float)X[ (i*N) + k ]);
    }
    sum_x_N     = sum_x_N / ((float)N);
    s           = 0.0 ;
-   si          = -1.0;
+   si          = -1;
    for( k = 1; k <= N ; k++ ){
-	   si      = -1.0 * si ;
-	   s       = s + ( si * pow( sum_x_N , (float)k ) / pow( (float)k, (float)m ) );
+	   si      = -1 * si ;
+	   s       = s + ( ((float)si) * pow( sum_x_N , (float)k ) / pow( (float)k, (float)m ) );
    }
    ll_batch[ i ] = s ;
 }
@@ -56,18 +56,18 @@ void c_der_ll_poly_wrt_f_part( int i, float *ll_batch, int m, int *X, int N ){
 //    void    (no return value).
 // -----------------------------------------------------------------------------------------------
 void c_log_likelihood_poly_part_i( int i, int *X, float *ll_batch, float f, float m,  int N ){
-   int k;
-   float sum_x_N,s,si;
+   int k,si;
+   float sum_x_N,s;
    sum_x_N     = 0.0 ;
    for( k = 0; k < N ; k++ ){
 	   sum_x_N = sum_x_N + ((float)X[ (i*N) + k ]);
    }
    sum_x_N     = sum_x_N / ((float)N);
    s           = 0.0 ;
-   si          = -1.0;
+   si          = -1;
    for( k = 1; k <= N ; k++ ){
-	   si      = -1.0 * si ;
-	   s       = s + ( si * pow( sum_x_N , (float)k ) / pow( (float)k, (float)m ) );
+	   si      = -1 * si ;
+	   s       = s + ( ((float)si) * pow( sum_x_N , (float)k ) / pow( (float)k, (float)m ) );
    }
    ll_batch[ i ] = -f*s ;
 }

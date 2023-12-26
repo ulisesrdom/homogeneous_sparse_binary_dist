@@ -28,13 +28,15 @@ void c_initRandom(){
 //             each neuron; X[ r * N  +  k ] stores the binary value of neuron k (out of N
 //             neurons in the population) for the r-th Gibbs sample).
 //    N       (integer value with the size of the population of neurons).
+//    M_TERMS (integer value with the number of terms to consider in the alternating series
+//             for the case of m > 1. This value should be in [3,4,5,...,N].).
 //    F       (float value with the f sparsity-inducing parameter).
 //    m       (integer value with the order of the polylogarithmic function).
 // Outputs:
 //    void    (no return value).
 // -----------------------------------------------------------------------------------------------
-void c_polylogarithmic_samp( int r, int NITE, int *X, int N, float F, int m ){
-   int k,j,samp,ite;
+void c_polylogarithmic_samp( int r, int NITE, int *X, int N, int M_TERMS, float F, int m ){
+   int k,j,samp,ite,si;
    float P,q,term0,term1,f_term,log_sum,sum_over_x;
    if( m ==1 ){
       for( ite = 1 ; ite <= NITE ; ite++ ){
@@ -46,7 +48,7 @@ void c_polylogarithmic_samp( int r, int NITE, int *X, int N, float F, int m ){
         for( k=0; k < N ; k++ ){
            samp      = r * N ;
 	       
-      		// Compute  F [ (term|x_k=0) - (term|x_k=1)]
+           // Compute  F [ (term|x_k=0) - (term|x_k=1)]
 		   // --------------------------------------------------------------------------------
 		   term0 = (sum_over_x - ((float)X[ samp + k ])) / ( (float) N ) ;
 	       if( fabs( term0 ) + 1.0 <= 1e-08 ){
@@ -86,9 +88,49 @@ void c_polylogarithmic_samp( int r, int NITE, int *X, int N, float F, int m ){
    }else{
       if( m < 1 ){
          printf("::c_polylogarithm_samp:: wrong value for m...");
-		 return;
+         return;
 	  }else{
-         
+         for( ite = 1 ; ite <= NITE ; ite++ ){
+	       sum_over_x  = 0.0;
+           samp        = r * N ;
+           for( j=0 ; j < N ; j++ ){
+              sum_over_x = sum_over_x + ((float)X[ samp + j ]);
+           }
+           for( k=0; k < N ; k++ ){
+              samp      = r * N ;
+	          
+      		  // Compute  alternating series part
+		      // --------------------------------------------------------------------------------
+			  si        = -1 ;
+			  f_term    = 0.0;
+		      for( j = 1; j <= M_TERMS ; j++ ){
+				  si    = -1 * si ;
+				  term0 = pow( ( sum_over_x - ((float)X[ samp + k ]) ) / ((float)N) , (float)k );
+				  term1 = pow( ( 1.0 + sum_over_x - ((float)X[ samp + k ]) ) / ((float)N) , (float)k );
+				  f_term= f_term + ( ((float)si) * (term0 - term1) / pow( (float)j, (float)m ) );
+			  }
+		      
+		      f_term= F * f_term ;
+		      
+		      // Compute log(h( sum_over_x_not_k + 1) / h(sum_over_x_not_k + 0))
+		      // --------------------------------------------------------------------------------
+		      log_sum   = log( (1.0 + sum_over_x - ((float)X[ samp + k ])) / ( ((float)N) - (sum_over_x - ((float)X[ samp + k ])) ) ) ;
+		      
+		      // Compute conditional probability for sampling
+		      // --------------------------------------------------------------------------------
+		      P         = 1.0 / (  1.0 + exp( -( log_sum + f_term ) )  );
+		      
+              q         = ( (float)rand() )  /  ( (float)RAND_MAX );
+              
+              if( q < P ){
+		         sum_over_x    = sum_over_x + ((float)(1 - X[ samp + k ]));
+                 X[ samp + k ] = 1;
+              }else{
+		         sum_over_x    = sum_over_x + ((float)(0 - X[ samp + k ]));
+                 X[ samp + k ] = 0;
+              }
+	       }
+         }
 	  }
    }
 }

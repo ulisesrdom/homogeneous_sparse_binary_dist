@@ -228,6 +228,8 @@ def Q_polynomial( np.ndarray[float,ndim=1,mode="c"] Q,\
 #               size N.
 # ---N        : integer value with the size of the neural population in each sample.
 # ---Ns       : integer value with the number of samples in the binary data.
+# ---M_TERMS  : integer value with the number of terms to consider in the alternating series
+#               for the case of m > 1. This value should be in [3,4,5,...,N].
 # ---M        : integer value with the number of Gibbs samples to produce for the derivative
 #               of the normalization function with respect to the f parameter.
 # ---eta      : float value with the learning rate for locally optimizing over the f parameter.
@@ -243,7 +245,7 @@ def Q_polynomial( np.ndarray[float,ndim=1,mode="c"] Q,\
 #    m is the integer order parameter of the polylogarithmic function.
 @boundscheck(False)
 @wraparound(False)
-def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns, int M,
+def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns, int M, int M_TERMS,
                                 float eta, float f_0, int m_min, int m_max, int MAX_ITE, int T ):
    cdef:
       int ite,t,m,m_p,i
@@ -273,7 +275,7 @@ def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns
            s1= s1 + ll_der_wrt_f_p1[ i ]
          s1  = s1 / float( Ns )
          # Obtain M Gibbs samples for the second part of the derivative
-         f_samp.GibbsSampling_polylogarithmic( X_SAMPLES, 11, N, M, f )
+         f_samp.GibbsSampling_polylogarithmic( X_SAMPLES, 11, N, M, M_TERMS, f, m )
          
          # Parallel computation of second part of log-likelihood derivative
          for i in prange(0,M,nogil=True,schedule='static',num_threads=4):

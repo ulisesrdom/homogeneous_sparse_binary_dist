@@ -14,7 +14,7 @@ ap.add_argument("-OPT"       ,  "--OPTION", required = True, help="Probability d
 ap.add_argument("-SAMP_T"    ,  "--SAMPLING_TYPE", required = True, help="Continuous population rate distributions (1); N-dimensional binary neurons distributions (2).")
 ap.add_argument("-VIS_C_T"   ,  "--VISUAL_CONVERGENCE_TEST", required = True, help="Polynomial Q_N(r_N; THETA_N) (1); Probability mass functions P(r_N; THETA_N) (2).")
 ap.add_argument("-DIST_T"    ,  "--DISTRIBUTION_TYPE", required = True, help="Polylogarithmic exponential (1); Shifted-geometric exponential (2); Polylogarithmic and shifted-geometric exp. (for same plot comparison) (3).")
-ap.add_argument("-N_SAMP"    ,  "--N_SAMPLES", required = True, help="Number of samples to draw for OPTION=2.")
+ap.add_argument("-N_SAMP"    ,  "--N_SAMPLES", required = True, help="Number of samples to draw for OPTION=2 and OPTION=4.")
 ap.add_argument("-N_P"       ,  "--N_P", required = True, help="Number of bins for the histograms for OPTION=2; or maximum number of points per row for OPTION=3.")
 ap.add_argument("-N"         ,  "--N", required = True, help="Number of neurons in the population.")
 ap.add_argument("-BASE_PAR"  , "--BASELINE_PARAMETERS", required=True, help="Comma separated baseline parameter values for each distribution in each option type.")
@@ -65,4 +65,4 @@ elif OPTION == 3:
                                          OUT_FOLDER, PLOT_PARAM_LIST )
 else:
    # Function call to fit the model parameters to a given dataset under the maximum likelihood principle
-   m_plots.plot_model_fit( DISTR_TYPE, N_P, BASE_PARAMETERS, IN_FOLDER, IN_FILES, OUT_FOLDER, PLOT_PARAM_LIST )
+   m_plots.plot_model_fit( DISTR_TYPE, N_SAMP,N_P, BASE_PARAMETERS, IN_FOLDER, IN_FILES, OUT_FOLDER, PLOT_PARAM_LIST )
