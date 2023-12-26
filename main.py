@@ -18,8 +18,10 @@ ap.add_argument("-N_SAMP"    ,  "--N_SAMPLES", required = True, help="Number of 
 ap.add_argument("-N_P"       ,  "--N_P", required = True, help="Number of bins for the histograms for OPTION=2; or maximum number of points per row for OPTION=3.")
 ap.add_argument("-N"         ,  "--N", required = True, help="Number of neurons in the population.")
 ap.add_argument("-BASE_PAR"  , "--BASELINE_PARAMETERS", required=True, help="Comma separated baseline parameter values for each distribution in each option type.")
-# ---------Parameters for visualization options ----
-ap.add_argument("-OUT_F",     "--OUTPUT_FOLDER", required = True, help="Output folder to store variables values and results.")
+# ---------Parameters for visualization and other options ----
+ap.add_argument("-IN_F",     "--INPUT_FOLDER", required = True, help="Input folder where input spiking data is stored for data fitting.")
+ap.add_argument("-IN_FI",    "--INPUT_FILES", required = True, help="Comma separated input file names with the spiking data pickle files.")
+ap.add_argument("-OUT_F",    "--OUTPUT_FOLDER", required = True, help="Output folder to store variables values and results.")
 ap.add_argument("-COLOR_L",  "--COLOR_LIST", required = True, help="Comma separated colors for each curve in the 1D plots or for the color ranges of the 2D plots.")
 ap.add_argument("-LSTY",     "--LINE_STYLES", required = True, help="Comma separated line styles for the curves in the 1D plots.")
 ap.add_argument("-DPI",      "--DPI", required = True, help="Dots per inch for the quality of the plots to generate.")
@@ -37,6 +39,8 @@ N_P              = int(args['N_P'])
 N                = int(args['N'])
 BASE_PARAMETERS  = str(args['BASELINE_PARAMETERS'])
 
+IN_FOLDER        = str(args['INPUT_FOLDER'])
+IN_FILES         = str(args['INPUT_FILES']).split(',')
 OUT_FOLDER       = str(args['OUTPUT_FOLDER'])
 COLOR_LIST       = str(args['COLOR_LIST'])
 LINE_STYLES      = str(args['LINE_STYLES'])
@@ -61,4 +65,4 @@ elif OPTION == 3:
                                          OUT_FOLDER, PLOT_PARAM_LIST )
 else:
    # Function call to fit the model parameters to a given dataset under the maximum likelihood principle
-   m_plots.plot_model_fit( DISTR_TYPE, N_P, BASE_PARAMETERS, OUT_FOLDER, PLOT_PARAM_LIST )
+   m_plots.plot_model_fit( DISTR_TYPE, N_P, BASE_PARAMETERS, IN_FOLDER, IN_FILES, OUT_FOLDER, PLOT_PARAM_LIST )

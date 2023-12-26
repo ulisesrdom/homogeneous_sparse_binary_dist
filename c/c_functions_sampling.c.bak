@@ -46,7 +46,7 @@ void c_polylogarithmic_samp( int r, int NITE, int *X, int N, float F, int m ){
         for( k=0; k < N ; k++ ){
            samp      = r * N ;
 	       
-      		// Compute  F [ (term|x_k=0) - (term|x_k=1)]
+      		// Compute  F [ (log_term|x_k=0) - (log_term|x_k=1)]
 		   // --------------------------------------------------------------------------------
 		   term0 = (sum_over_x - ((float)X[ samp + k ])) / ( (float) N ) ;
 	       if( fabs( term0 ) + 1.0 <= 1e-08 ){

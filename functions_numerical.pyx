@@ -246,7 +246,7 @@ def Q_polynomial( np.ndarray[float,ndim=1,mode="c"] Q,\
 def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns, int M,
                                 float eta, float f_0, int m_min, int m_max, int MAX_ITE, int T ):
    cdef:
-      int ite,t,m,m_p,r,i
+      int ite,t,m,m_p,i
       float f,s1,s2
    cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
    cdef float[:] lZ_der_wrt_f     = np.zeros((M,),dtype=np.float32)
@@ -264,25 +264,25 @@ def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns
          for i in range(0,M):
             lZ_der_wrt_f[i] = 0.0
          # Parallel computation of first part of log-likelihood derivative
-         for r in prange(0,Ns,nogil=True,schedule='static',num_threads=4):
+         for i in prange(0,Ns,nogil=True,schedule='static',num_threads=4):
             # Serial ordered computation
-            c_der_ll_poly_wrt_f_p1( r, &ll_batch[0], m, &X[0], N, Ns )
+            c_der_ll_poly_wrt_f_part( i, &ll_batch[0], m, &X[0], N )
          # Collapse parallel batch results
          s1  = 0.0
-         for r in range(0,Ns):
-           s1= s1 + ll_der_wrt_f_p1[ r ]
+         for i in range(0,Ns):
+           s1= s1 + ll_der_wrt_f_p1[ i ]
          s1  = s1 / float( Ns )
          # Obtain M Gibbs samples for the second part of the derivative
          f_samp.GibbsSampling_polylogarithmic( X_SAMPLES, 11, N, M, f )
          
          # Parallel computation of second part of log-likelihood derivative
-         for r in prange(0,M,nogil=True,schedule='static',num_threads=4):
+         for i in prange(0,M,nogil=True,schedule='static',num_threads=4):
             # Serial ordered computation
-            c_der_Z_poly_wrt_f( r, &lZ_der_wrt_f[0], m, &X_SAMPLES[0], N, Ns )
+            c_der_ll_poly_wrt_f_part( i, &lZ_der_wrt_f[0], m, &X_SAMPLES[0], N )
          # Collapse parallel batch results
          s2  = 0.0
-         for r in range(0,M):
-           s2= s2 + lZ_der_wrt_f[ r ]
+         for i in range(0,M):
+           s2= s2 + lZ_der_wrt_f[ i ]
          s2  = s2 / float( M )
          f   = f + (eta*(-s1-s2))
       
@@ -290,14 +290,16 @@ def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns
       # ---------------------------------------------------------------------------
       s2     = float('-inf')
       for m_p in range(m_min,m_max+1):
-         # Parallel computation of first part of log-likelihood derivative
-         for r in prange(0,Ns,nogil=True,schedule='static',num_threads=4):
+         for i in range(0,Ns):
+            ll_batch[i] = 0.0
+         # Parallel computation of the partial log-likelihood for each sample
+         for i in prange(0,Ns,nogil=True,schedule='static',num_threads=4):
             # Serial ordered computation
-            c_log_likelihood_poly_r( r, &X[0], &ll_batch[0], f,m_p,  N )
+            c_log_likelihood_poly_part_i( i, &X[0], &ll_batch[0], f,m_p,  N )
          # Collapse parallel batch results
          s1  = 0.0
-         for r in range(0,Ns):
-           s1= s1 + ll_batch[ r ]
+         for i in range(0,Ns):
+           s1= s1 + ll_batch[ i ]
          if s1 > s2 :
            s2= s1
            m = m_p
@@ -314,9 +316,5 @@ def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns
 # -----------------------------------------------------------------------------------------------
 cdef extern from "c/c_functions_numerical.h" nogil:
    
-   void c_der_ll_poly_wrt_f_p1( int r, float *ll_batch, int m, \
-                                int *X, int N, int Ns )
-   void c_der_Z_poly_wrt_f( int r, float *lZ_der_wrt_f, int m, \
-                            int *X, int N, int Ns )
-   void c_log_likelihood_poly_r( int r, int *X, float *ll_batch, \
-                                 float f, float m,  int N )
+   void c_der_ll_poly_wrt_f_part( int i, float *ll_batch, int m, int *X, int N )
+   void c_log_likelihood_poly_part_i( int i, int *X, float *ll_batch, float f, float m,  int N )
