@@ -1,4 +1,5 @@
 /build/
+/*.pyd
 /*.so
 /*.c
 /*.bak
