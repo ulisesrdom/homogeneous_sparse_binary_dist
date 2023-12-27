@@ -5,6 +5,7 @@ import functions_generic as f_gen
 import functions_sampling as f_samp
 import functions_numerical as f_nume
 import matplotlib
+import sys
 import matplotlib.pyplot as plt
 
 matplotlib.rc('xtick', labelsize=16)
@@ -814,11 +815,18 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
    # Read binary spiking data
    # ---------------------------------------------------------------------------------------
    for file_n in IN_FILES:
-      X      = pk.load( open( OUT_FOLDER + '/' + file_n ,'rb') ).T
+      full_n = ''
+      if sys.platform.startswith('win'):
+         full_n = IN_FOLDER + '\\' + file_n
+      else:
+         full_n = IN_FOLDER + '/' + file_n
+      X      = pk.load( open( full_n ,'rb') ).T
+      X      = X[:,0:(int(0.1*X.shape[1]))]
       N      = X.shape[1]
       Ns     = X.shape[0]
       X      = X.reshape(-1,)
       X      = X.copy(order='C')
+      print("Processing file {} with {} samples and {} neurons ...".format(file_n, Ns, N))
       
       n_samples    = np.zeros((N_SAMP,),dtype=np.int32)
       n_samples    = n_samples.copy(order='C')
@@ -827,7 +835,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
       if DISTR_TYPE == 1 :
          # -----------------------------------------------------------------------------
          # Polylogarithmic exponential case
-         f_min     = float(B_PARAMS[0])
+         f_init    = float(B_PARAMS[0])
          m_min     = int(B_PARAMS[1])
          m_max     = int(B_PARAMS[2])
          M         = int(B_PARAMS[3])
@@ -837,7 +845,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          T         = int(B_PARAMS[7])
          
          # Fit the parameters of the polylogarithmic exp. distr. to the data
-         f,m = f_nume.model_fit_polylogarithmic(  X, N,Ns,M,M_TERMS, eta, f_min,m_min,m_max, MAX_ITE,T )
+         f,m = f_nume.model_fit_polylogarithmic(  X, N,Ns,M,M_TERMS, eta, f_init,m_min,m_max, MAX_ITE,T )
          # Obtain Gibbs samples with the obtained parameters and its corresponding count histogram
          f_samp.GibbsSampling_polylogarithmic_hist( n_samples, 11,N,N_SAMP,M_TERMS,f,m )
          # Obtain the spiking data histogram for the count values on the active neurons
@@ -850,9 +858,24 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
       elif DISTR_TYPE == 2:
          # -----------------------------------------------------------------------------
          # Shifted-geometric exponential case
-         f         = float(B_PARAMS[0])
-         tau       = float(B_PARAMS[1])
-         # Evaluate the shifted-geometric probability distribution function
+         f_init    = float(B_PARAMS[0])
+         tau_init  = float(B_PARAMS[1])
+         M         = int(B_PARAMS[2])
+         eta       = float(B_PARAMS[3])
+         eta_tau   = float(B_PARAMS[4])
+         MAX_ITE   = int(B_PARAMS[5])
+         T         = int(B_PARAMS[6])
+         
+         # Fit the parameters of the shifted-geometric exp. distr. to the data
+         f,tau = f_nume.model_fit_shifted_geom(  X, N,Ns,M, eta,eta_tau, f_init,tau_init, MAX_ITE,T )
+         # Obtain Gibbs samples with the obtained parameters and its corresponding count histogram
+         f_samp.GibbsSampling_shifted_geometric_hist( n_samples, 11,N,N_SAMP, f, tau )
+         # Obtain the spiking data histogram for the count values on the active neurons
+         for r in range(0,Ns):
+            n       = 0
+            for j in range(0,N):
+               n    = n + X[ r*N + j ]
+            n_data[ r ] = n
          
       else :
          # -----------------------------------------------------------------------------
@@ -897,13 +920,13 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          fig.subplots_adjust(wspace = 0.6, hspace = 0.6)
          ax1    = fig.add_subplot(1,1,1)
          
-         ax1.hist( n_data, density=False, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2 )
-         ax1.hist( n_samples, density=False, bins=N_BINS, histtype='bar', color=COLOR_LIST[1], alpha=0.7, edgecolor='black', linewidth=1.2 )
+         ax1.hist( n_data, range=(0,N), density=False, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2 )
+         ax1.hist( n_samples, range=(0,N), density=False, bins=N_BINS, histtype='bar', color=COLOR_LIST[1], alpha=0.7, edgecolor='black', linewidth=1.2 )
          
          if DISTR_TYPE == 1 :
-            ax1.set_title('Polylogarithmic exp. distribution model fit, $m='+str(m)+'$,$f='+str(f)+'$',fontsize=20,pad=20)
+            ax1.set_title('Polylogarithmic exp. distribution model fit, $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
          else :
-            ax1.set_title('Shifted-geometric exp. distribution model fit, $\\tau='+str(tau)+'$,$f='+str(f)+'$',fontsize=20,pad=20)
+            ax1.set_title('Shifted-geometric exp. distribution model fit, $\\tau='+str(round(tau,2))+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
          
          str_suffix = 'BINARY'
          ax1.set_xlabel('$n$ (number of active neurons)',fontsize=18)
@@ -912,8 +935,8 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          ax1.legend().remove()
          
          if DISTR_TYPE == 1 :
-            fig.savefig(OUT_FOLDER+'/MODEL_FIT_POLYLOGARITHM_m'+str(m)+'_f'+str(f)+str_suffix+'_'+file_n+'.png')
+            fig.savefig(OUT_FOLDER+'/MODEL_FIT_POLYLOGARITHM_m'+str(m)+'_f'+str(round(f,2))+str_suffix+'_'+file_n+'.png')
          else :
-            fig.savefig(OUT_FOLDER+'/MODEL_FIT_SHIFTED_GEOMETRIC_tau'+str(tau)+'_f'+str(f)+str_suffix+'_'+file_n+'.png')
+            fig.savefig(OUT_FOLDER+'/MODEL_FIT_SHIFTED_GEOMETRIC_tau'+str(round(tau,2))+'_f'+str(round(f,2))+str_suffix+'_'+file_n+'.png')
    
    return None

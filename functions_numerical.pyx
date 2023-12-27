@@ -233,7 +233,7 @@ def Q_polynomial( np.ndarray[float,ndim=1,mode="c"] Q,\
 # ---M        : integer value with the number of Gibbs samples to produce for the derivative
 #               of the normalization function with respect to the f parameter.
 # ---eta      : float value with the learning rate for locally optimizing over the f parameter.
-# ---f_0      : float value with the initial value for the sparsity inducing parameter.
+# ---f_init   : float value with the initial value for the sparsity inducing parameter.
 # ---m_min    : integer value with the minimum value for the grid-search range of the integer
 #               order of the polylogarithmic function.
 # ---m_max    : integer value with the maximum value for the grid-search range of the integer
@@ -246,15 +246,16 @@ def Q_polynomial( np.ndarray[float,ndim=1,mode="c"] Q,\
 @boundscheck(False)
 @wraparound(False)
 def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns, int M, int M_TERMS,
-                                float eta, float f_0, int m_min, int m_max, int MAX_ITE, int T ):
+                                float eta, float f_init, int m_min, int m_max, int MAX_ITE, int T ):
    cdef:
       int ite,t,m,m_p,i
       float f,s1,s2
    cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
    cdef float[:] lZ_der_wrt_f     = np.zeros((M,),dtype=np.float32)
-   cdef int[:]   X_SAMPLES        = np.zeros((M*N,),dtype=np.int32)
+   cdef np.ndarray[int, ndim=1, mode='c'] X_SAMPLES
+   X_SAMPLES                      = np.zeros((M*N,),dtype=np.int32, order='C')
    # Initialize parameters
-   f         = f_0
+   f         = f_init
    m         = m_min
    # Iterative optimization
    for ite in range(1,MAX_ITE+1):
@@ -272,7 +273,7 @@ def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns
          # Collapse parallel batch results
          s1  = 0.0
          for i in range(0,Ns):
-           s1= s1 + ll_der_wrt_f_p1[ i ]
+           s1= s1 + ll_batch[ i ]
          s1  = s1 / float( Ns )
          # Obtain M Gibbs samples for the second part of the derivative
          f_samp.GibbsSampling_polylogarithmic( X_SAMPLES, 11, N, M, M_TERMS, f, m )
@@ -286,7 +287,7 @@ def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns
          for i in range(0,M):
            s2= s2 + lZ_der_wrt_f[ i ]
          s2  = s2 / float( M )
-         f   = f + (eta*(-s1-s2))
+         f   = f + (eta*(-s1+s2))
       
       # Locally optimize (grid search) for the m polylogarithmic parameter given f
       # ---------------------------------------------------------------------------
@@ -305,8 +306,113 @@ def model_fit_polylogarithmic(  np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns
          if s1 > s2 :
            s2= s1
            m = m_p
-      
+      print("model_fit_polylogarithmic:: iteration {}, f={}, m={}".format(ite,f,m))
    return f,m
+
+# -----------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------
+# Function to fit the shifted-geometric exponential distr. model to a given dataset of binary
+# spikes (assummed to come from spontaneous neural activity).
+# Parameters:
+# ---X        : float flattened array with Ns binary samples from real spiking data, each of
+#               size N.
+# ---N        : integer value with the size of the neural population in each sample.
+# ---Ns       : integer value with the number of samples in the binary data.
+# ---M        : integer value with the number of Gibbs samples to produce for the derivative
+#               of the normalization function with respect to the f parameter.
+# ---eta      : float value with the learning rate for locally optimizing the f-parameter.
+# ---eta_tau  : float value with the learning rate for locally optimizing the tau-parameter.
+# ---f_init   : float value with the initial value for the sparsity inducing parameter.
+# ---tau_init : float value with the initial value for the shifted-geometric tau parameter.
+# ---MAX_ITE  : integer value with the maximum number of optimization iterations.
+# ---T        : integer value with the maximum number of local optimization iterations.
+# Returns:
+# ---Pair of fitted parameters: f and tau, where f is the sparsity inducing parameter and
+#    tau is the shifted-geometric function parameter.
+@boundscheck(False)
+@wraparound(False)
+def model_fit_shifted_geom( np.ndarray[int,ndim=1,mode="c"] X, int N, int Ns, int M, \
+                            float eta, float eta_tau, float f_init, float tau_init, int MAX_ITE, int T ):
+   cdef:
+      int ite,t,i
+      float f,s1,s2,tau
+   cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
+   cdef float[:] lZ_der_batch     = np.zeros((M,),dtype=np.float32)
+   cdef np.ndarray[int, ndim=1, mode='c'] X_SAMPLES
+   X_SAMPLES                      = np.zeros((M*N,),dtype=np.int32, order='C')
+   # Initialize parameters
+   f         = f_init
+   tau       = tau_init
+   # Iterative optimization
+   for ite in range(1,MAX_ITE+1):
+      # Locally optimize for the sparsity inducing parameter f given tau
+      # ---------------------------------------------------------------------------
+      for t in range(1,T+1):
+         for i in range(0,Ns):
+            ll_batch[i]     = 0.0
+         for i in range(0,M):
+            lZ_der_batch[i] = 0.0
+         # Parallel computation of first part of log-likelihood derivative
+         for i in prange(0,Ns,nogil=True,schedule='static',num_threads=4):
+            # Serial ordered computation
+            c_der_ll_sg_wrt_f_part( i, &ll_batch[0], tau, &X[0], N )
+         # Collapse parallel batch results
+         s1  = 0.0
+         for i in range(0,Ns):
+           s1= s1 + ll_batch[ i ]
+         s1  = s1 / float( Ns )
+         # Obtain M Gibbs samples for the second part of the derivative
+         f_samp.GibbsSampling_shifted_geometric( X_SAMPLES, 11, N, M, f, tau )
+         
+         # Parallel computation of second part of log-likelihood derivative
+         for i in prange(0,M,nogil=True,schedule='static',num_threads=4):
+            # Serial ordered computation
+            c_der_ll_sg_wrt_f_part( i, &lZ_der_batch[0], tau, &X_SAMPLES[0], N )
+         # Collapse parallel batch results
+         s2  = 0.0
+         for i in range(0,M):
+           s2= s2 + lZ_der_batch[ i ]
+         s2  = s2 / float( M )
+         f   = f + (eta*(-s1+s2))
+         if f < 0.0 :
+            f = 0.0
+      
+      # Locally optimize for the tau shifted-geometric parameter given f
+      # ---------------------------------------------------------------------------
+      for t in range(1,T+1):
+         for i in range(0,Ns):
+            ll_batch[i]     = 0.0
+         for i in range(0,M):
+            lZ_der_batch[i] = 0.0
+         # Parallel computation of first part of log-likelihood derivative
+         for i in prange(0,Ns,nogil=True,schedule='static',num_threads=4):
+            # Serial ordered computation
+            c_der_ll_sg_wrt_tau_part( i, &ll_batch[0], f,tau, &X[0], N )
+         # Collapse parallel batch results
+         s1  = 0.0
+         for i in range(0,Ns):
+           s1= s1 + ll_batch[ i ]
+         s1  = s1 / float( Ns )
+         # Obtain M Gibbs samples for the second part of the derivative
+         f_samp.GibbsSampling_shifted_geometric( X_SAMPLES, 11, N, M, f, tau )
+         
+         # Parallel computation of second part of log-likelihood derivative
+         for i in prange(0,M,nogil=True,schedule='static',num_threads=4):
+            # Serial ordered computation
+            c_der_ll_sg_wrt_tau_part( i, &lZ_der_batch[0], f,tau, &X_SAMPLES[0], N )
+         # Collapse parallel batch results
+         s2  = 0.0
+         for i in range(0,M):
+           s2= s2 + lZ_der_batch[ i ]
+         s2  = s2 / float( M )
+         tau = tau + (eta_tau*(-s1+s2))
+         if tau < 0 :
+            tau = 0.
+         if tau > 1.0 :
+            tau = 1.0
+      
+      print("model_fit_shifted_geom:: iteration {}, f={}, tau={}".format(ite,f,tau))
+   return f,tau
 
 # -----------------------------------------------------------------------------------------------
 # -----------------------------------------------------------------------------------------------
@@ -320,3 +426,5 @@ cdef extern from "c/c_functions_numerical.h" nogil:
    
    void c_der_ll_poly_wrt_f_part( int i, float *ll_batch, int m, int *X, int N )
    void c_log_likelihood_poly_part_i( int i, int *X, float *ll_batch, float f, float m,  int N )
+   void c_der_ll_sg_wrt_f_part( int i, float *ll_batch, float tau, int *X, int N )
+   void c_der_ll_sg_wrt_tau_part( int i, float *ll_batch, float f, float tau, int *X, int N )
