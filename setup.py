@@ -8,14 +8,10 @@ gcc_flags = [] #['-shared', '-O2', '-fno-strict-aliasing']
 
 ext_special = Extension('functions_special', sources=['functions_special.pyx'],
                 language='c',
-                #extra_compile_args=['-fopenmp'], extra_link_args=['-fopenmp'],
-                #extra_compile_args=['/openmp'], extra_link_args=['/openmp'],
                 include_dirs = get_numpy_include_dirs())
 
 ext_generic = Extension('functions_generic', sources=['functions_generic.pyx'],
                 language='c',
-                #extra_compile_args=['-fopenmp'], extra_link_args=['-fopenmp'],
-                #extra_compile_args=['/openmp'], extra_link_args=['/openmp'],
                 include_dirs = get_numpy_include_dirs())
 
 ext_sampling = Extension('functions_sampling',
@@ -43,4 +39,3 @@ setup(name='FUNCTION MODULES',
       cmdclass = {'build_ext': build_ext},
       # since the package has c code, the egg cannot be zipped
       zip_safe=False)
-

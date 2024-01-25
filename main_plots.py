@@ -780,16 +780,23 @@ def plot_histogram( SAMPLING_TYPE, DISTR_TYPE, N_SAMP,N_BINS,N, BASE_PARAMS,\
 # Parameters:
 # ---DISTR_TYPE: integer value to select a distribution to sample from. The options are:
 #                polylogarithmic exponential (1); shifted-geometric exponential (2);
-#                polylogarithmic and shifted-geometric exponential for joint plot of
-#                the histograms (3).
+#                polylogarithmic and shifted-geometric exponential for joint plot (3).
 # ---N_SAMP    : integer value with the number of samples to draw for each distribution.
 # ---N_BINS    : integer value with the number of bins for each histogram.
 # ---BASE_PARAMS: string with comma separated baseline parameter values for each
-#                distribution. For DISTR_TYPE=1 the format is 'f,m,M', where f>0 is the
-#                sparsity inducing parameter and the integer m>0 is the polylogarithmic
-#                order and M is the number of terms to use for the m>1 approximation.
-#                For DISTR_TYPE=2 the format is 'f,tau' where f is as in the DISTR_TYPE=1
-#                case and 0<tau<1 refers to the tau shifted-geometric parameter.
+#                distribution. For DISTR_TYPE=1 the format is 'f_init,m_min,m_max,M_TERMS,eta,MAX_ITE,T',
+#                where f_init>0 is the initial value of the sparsity inducing parameter and the integers
+#                m_min and m_max denote the lower and upper bound for the polylogarithmic m order parameter
+#                grid-search, M_TERMS is the number of terms to use for the case of the m>1 approximation,
+#                eta is the learning rate for the f parameter, MAX_ITE is the maximum number of global
+#                optimization iterations and T is the number of local optimization iterations.
+#                For DISTR_TYPE=2 the format is 'f_init,tau_init,eta,eta_tau,MAX_ITE,T', where f_init>0 is
+#                the initial value of the sparsity inducing parameter, tau_init is the initial value of the
+#                tau parameter, eta is the learning rate for the f parameter, eta_tau is the learning rate
+#                for the tau parameter, MAX_ITE is the maximum number of global optimization iterations and
+#                T is the number of local optimization iterations.
+#                For DISTR_TYPE=3 the format is 'f_init,m_min,m_max,tau_init,M_TERMS,eta,eta_tau,MAX_ITE,T'
+#                where the parameter names are the same as in the previous two cases.
 # ---IN_FILES:   list of pickle file names for the binary spiking data.
 # ---IN_FOLDER:  string value with the input folder, where the spiking data pickle files
 #                are located.
@@ -811,6 +818,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
    
    size_cols    = len(COLOR_LIST)
    size_lsty    = len(LINE_STYLES)
+   eps          = 1e-15
    
    # Read binary spiking data
    # ---------------------------------------------------------------------------------------
@@ -820,119 +828,188 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          full_n = IN_FOLDER + '\\' + file_n
       else:
          full_n = IN_FOLDER + '/' + file_n
-      X      = pk.load( open( full_n ,'rb') ).T
-      X      = X[:,0:(int(0.1*X.shape[1]))]
-      N      = X.shape[1]
-      Ns     = X.shape[0]
+      X      = np.asarray( pk.load( open( full_n, 'rb' ) ) , dtype=np.int32 )
+      Ntri   = X.shape[1]
+      N      = X.shape[2]
+      Tim    = X.shape[0]
+      print("Time points = {}, Trials = {}, No. Neurons = {}".format(Tim,Ntri,N))
+      X      = X.reshape( Tim * Ntri , N )
+      Ns     = Tim * Ntri
+      # Sub-sample for faster fit and comparable scale
+      if Ns > N_SAMP :
+       ind   = np.arange(0,Ns)
+       ind_s = np.random.choice( ind, size=N_SAMP, replace=False)
+       X     = X[ ind_s, :]
+       Ns    = N_SAMP
+      R      = np.zeros((Ns,),dtype=np.float32)
+      
+      max_per_sample = 0
+      for i in range(0,Ns):
+         n_act       = np.sum( X[i,:] )
+         R[ i ]      = float( n_act ) / float( N )
+         if n_act > max_per_sample :
+            max_per_sample = np.sum( X[i,:] )
+      print("max_per_sample = {}".format(max_per_sample))
+      
       X      = X.reshape(-1,)
       X      = X.copy(order='C')
+      R      = R.copy(order='C')
+      r_do   = np.asarray( np.arange(0,1.0 + float(1. / float(N)), float(1. / float(N)) ) , dtype=np.float32)
+      r_do[0]= eps
+      r_do[N]= 1.0 - eps
+      r_do   = r_do.copy(order='C')
+      pdf_r  = np.zeros((N+1,),dtype=np.float32)
+      pdf_r  = pdf_r.copy(order='C')
       print("Processing file {} with {} samples and {} neurons ...".format(file_n, Ns, N))
       
-      n_samples    = np.zeros((N_SAMP,),dtype=np.int32)
-      n_samples    = n_samples.copy(order='C')
-      n_data       = np.zeros((Ns,),dtype=np.int32)
-      n_data       = n_data.copy(order='C')
       if DISTR_TYPE == 1 :
          # -----------------------------------------------------------------------------
          # Polylogarithmic exponential case
          f_init    = float(B_PARAMS[0])
          m_min     = int(B_PARAMS[1])
          m_max     = int(B_PARAMS[2])
-         M         = int(B_PARAMS[3])
-         M_TERMS   = int(B_PARAMS[4])
-         eta       = float(B_PARAMS[5])
-         MAX_ITE   = int(B_PARAMS[6])
-         T         = int(B_PARAMS[7])
+         M_TERMS   = int(B_PARAMS[3])
+         eta       = float(B_PARAMS[4])
+         MAX_ITE   = int(B_PARAMS[5])
+         T         = int(B_PARAMS[6])
          
          # Fit the parameters of the polylogarithmic exp. distr. to the data
-         f,m = f_nume.model_fit_polylogarithmic(  X, N,Ns,M,M_TERMS, eta, f_init,m_min,m_max, MAX_ITE,T )
-         # Obtain Gibbs samples with the obtained parameters and its corresponding count histogram
-         f_samp.GibbsSampling_polylogarithmic_hist( n_samples, 11,N,N_SAMP,M_TERMS,f,m )
-         # Obtain the spiking data histogram for the count values on the active neurons
-         for r in range(0,Ns):
-            n       = 0
-            for j in range(0,N):
-               n    = n + X[ r*N + j ]
-            n_data[ r ] = n
+         f,m       = f_nume.model_fit_polylogarithmic_r(  R, r_do, N,Ns,M_TERMS, eta, f_init,m_min,m_max, MAX_ITE,T )
+         # Compute analytic solution with found parameters
+         f_gen.polylogarithmic_pdf( pdf_r, r_do, N+1, f, m, M_TERMS )
          
       elif DISTR_TYPE == 2:
          # -----------------------------------------------------------------------------
          # Shifted-geometric exponential case
          f_init    = float(B_PARAMS[0])
          tau_init  = float(B_PARAMS[1])
-         M         = int(B_PARAMS[2])
-         eta       = float(B_PARAMS[3])
-         eta_tau   = float(B_PARAMS[4])
-         MAX_ITE   = int(B_PARAMS[5])
-         T         = int(B_PARAMS[6])
+         eta       = float(B_PARAMS[2])
+         eta_tau   = float(B_PARAMS[3])
+         MAX_ITE   = int(B_PARAMS[4])
+         T         = int(B_PARAMS[5])
          
          # Fit the parameters of the shifted-geometric exp. distr. to the data
-         f,tau = f_nume.model_fit_shifted_geom(  X, N,Ns,M, eta,eta_tau, f_init,tau_init, MAX_ITE,T )
-         # Obtain Gibbs samples with the obtained parameters and its corresponding count histogram
-         f_samp.GibbsSampling_shifted_geometric_hist( n_samples, 11,N,N_SAMP, f, tau )
-         # Obtain the spiking data histogram for the count values on the active neurons
-         for r in range(0,Ns):
-            n       = 0
-            for j in range(0,N):
-               n    = n + X[ r*N + j ]
-            n_data[ r ] = n
+         f,tau     = f_nume.model_fit_shifted_geom_r(  R, r_do, N,Ns, eta,eta_tau, f_init,tau_init, MAX_ITE,T )
+         # Compute analytic solution with found parameters
+         f_gen.shifted_geometric_pdf( pdf_r, r_do, N+1, f, tau)
          
       else :
          # -----------------------------------------------------------------------------
          # Both exp. distributions case
-         f         = float(B_PARAMS[0])
-         m         = int(B_PARAMS[1])
-         MTERMS    = int(B_PARAMS[2])
-         tau       = float(B_PARAMS[3])
+         
+         f_init    = float(B_PARAMS[0])
+         m_min     = int(B_PARAMS[1])
+         m_max     = int(B_PARAMS[2])
+         tau_init  = float(B_PARAMS[3])
+         M_TERMS   = int(B_PARAMS[4])
+         eta       = float(B_PARAMS[5])
+         eta_tau   = float(B_PARAMS[6])
+         MAX_ITE   = int(B_PARAMS[7])
+         T         = int(B_PARAMS[8])
+         
+         # Fit the parameters of the polylogarithmic exp. distr. to the data
+         f,m       = f_nume.model_fit_polylogarithmic_r(  R, r_do, N,Ns,M_TERMS, eta, f_init,m_min,m_max, MAX_ITE,T )
+         # Compute analytic solution with found parameters
+         f_gen.polylogarithmic_pdf( pdf_r, r_do, N+1, f, m, M_TERMS )
+         
+         # Fit the parameters of the shifted-geometric exp. distr. to the data
+         f2,tau    = f_nume.model_fit_shifted_geom_r(  R, r_do, N,Ns, eta,eta_tau, f_init,tau_init, MAX_ITE,T )
+         # Compute analytic solution with found parameters
+         pdf_r2    = np.zeros((N+1,),dtype=np.float32)
+         pdf_r2    = pdf_r2.copy(order='C')
+         f_gen.shifted_geometric_pdf( pdf_r2, r_do, N+1, f2, tau)
       
       # Show plot with the histogram of the spiking data
       # --------------------------------------------------------------------------------
       if DISTR_TYPE == 3 :
-         '''fig, (ax1,ax2) = plt.subplots(2,1,figsize=(12,12),dpi=DPI)
-         fig.subplots_adjust(top=0.9, bottom = 0.1, right=0.9, left=0.1, wspace = 0.02, hspace = 0.15)
-         
-         ax1.hist( r_samples, density=False, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2 )
-         ax1.set_title('Polylogarithmic exp. distribution histogram, $m='+str(m)+'$,$f='+str(f)+'$',fontsize=20,pad=20)
-         str_suffix = 'BINARY'
-         ax1.set_xlabel('',fontsize=18)
-         common_y_lab = 'Count per bin'
-         ax1.set_ylabel('',fontsize=18)
-         ax1.grid()
-         ax1.legend().remove()
-         for tick in ax1.xaxis.get_major_ticks():
-            tick.tick1line.set_visible(False)
-            tick.tick2line.set_visible(False)
-            tick.label1.set_visible(False)
-            tick.label2.set_visible(False)
-         
-         ax2.hist( r_samples2, density=False, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2 )
-         ax2.set_title('Shifted-geometric exp. distribution histogram, $\\tau='+str(tau)+'$,$f='+str(f)+'$',fontsize=20,pad=20)
-         str_suffix = 'BINARY'
-         ax2.set_xlabel('$n$ (number of active neurons)',fontsize=18)
-         ax2.set_ylabel('',fontsize=18)
-         ax2.grid()
-         ax2.legend().remove()
-         fig.text(0.02, 0.5, common_y_lab, ha='center', va='center', rotation='vertical', fontsize=18)
-         fig.savefig(OUT_FOLDER+'/HIST_SAMPLES_POLY_SHIFTGEOM_m'+str(m)+'_f'+str(f)+'_tau'+str(tau)+str_suffix+'.png')'''
-         print("d")
-      else:
-         fig    = plt.figure(figsize=(12,6),dpi=DPI)
+         fig, axes = plt.subplots( nrows=2, ncols=2, figsize=(20, 12), dpi=DPI )
          fig.subplots_adjust(wspace = 0.6, hspace = 0.6)
-         ax1    = fig.add_subplot(1,1,1)
          
-         ax1.hist( n_data, range=(0,N), density=False, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2 )
-         ax1.hist( n_samples, range=(0,N), density=False, bins=N_BINS, histtype='bar', color=COLOR_LIST[1], alpha=0.7, edgecolor='black', linewidth=1.2 )
+         # Create histograms
+         r_lim                   = (max_per_sample+1.)/float(N)
+         hist_data, edges_data   = np.histogram( R  , range=(0.0,1.0), bins=N_BINS, density=True )
+         
+         # Plot histograms in log-scale
+         axes[0,0].loglog( edges_data[:-1], hist_data, label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle=LINE_STYLES[0] )
+         axes[0,0].loglog( r_do, pdf_r, label='PDF model values', marker='o', color=COLOR_LIST[1], alpha=0.7, linestyle=LINE_STYLES[1] )
+         axes[0,0].set_xlim(0,r_lim)
+         axes[0,0].set_xscale('linear')
+         axes[0,0].legend()
+         
+         axes[1,0].loglog( edges_data[:-1], hist_data, label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle=LINE_STYLES[0] )
+         axes[1,0].loglog( r_do, pdf_r2, label='PDF model values', marker='o', color=COLOR_LIST[1], alpha=0.7, linestyle=LINE_STYLES[1] )
+         axes[1,0].set_xlim(0,r_lim)
+         axes[1,0].set_xscale('linear')
+         axes[1,0].legend()
+         
+         # Plot histograms in linear scale
+         axes[0,1].hist( R, range=(0,1.0), density=True, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2, label='Data histogram' )
+         axes[0,1].plot( r_do, pdf_r, color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1], label='Model probability' )
+         
+         axes[1,1].hist( R, range=(0,1.0), density=True, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2, label='Data histogram' )
+         axes[1,1].plot( r_do, pdf_r2, color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1], label='Model probability' )
+         #print("SG PDF = {}".format(pdf_r2))
+         
+         axes[0,0].set_title('Polylogarithmic exp. distr. model fit (log-scale), $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
+         axes[0,1].set_title('Polylogarithmic exp. distr. model fit, $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
+         axes[1,0].set_title('Shifted-geometric exp. distr. model fit (log-scale), $\\tau='+str(round(tau,2))+'$,$f='+str(round(f2,2))+'$',fontsize=20,pad=20)
+         axes[1,1].set_title('Shifted-geometric exp. distr. model fit, $\\tau='+str(round(tau,2))+'$,$f='+str(round(f2,2))+'$',fontsize=20,pad=20)
+         
+         str_suffix = '_POP_RATE'
+         axes[0,0].set_xlabel('$r$ (population rate)',fontsize=18)
+         axes[0,0].set_ylabel('Count per bin (Log-scale)',fontsize=18)
+         axes[0,0].grid()
+         
+         axes[0,1].set_xlabel('$r$ (population rate)',fontsize=18)
+         axes[0,1].set_ylabel('Normalized bin count',fontsize=18)
+         axes[0,1].grid()
+         axes[0,1].legend()
+         
+         axes[1,0].set_xlabel('$r$ (population rate)',fontsize=18)
+         axes[1,0].set_ylabel('Count per bin (Log-scale)',fontsize=18)
+         axes[1,0].grid()
+         
+         axes[1,1].set_xlabel('$r$ (population rate)',fontsize=18)
+         axes[1,1].set_ylabel('Normalized bin count',fontsize=18)
+         axes[1,1].grid()
+         axes[1,1].legend()
+         
+         fig.savefig(OUT_FOLDER+'/MODEL_FIT_POLY_SHIFTGEOM_m'+str(m)+'_f'+str(round(f,2))+str_suffix+'_tau'+str(round(tau,2))+'_f'+str(round(f2,2))+'_'+file_n+'.png')
+         
+      else:
+         fig, (ax1, ax2) = plt.subplots( nrows=1, ncols=2, figsize=(20, 6), dpi=DPI )
+         fig.subplots_adjust(wspace = 0.6, hspace = 0.6)
+         
+         # Create histograms
+         r_lim  = (max_per_sample+1.)/float(N)
+         hist_data, edges_data = np.histogram( R  , range=(0.0,1.0), bins=N_BINS, density=True )
+         
+         # Plot histograms in log-scale
+         ax1.loglog( edges_data[:-1], hist_data, label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle=LINE_STYLES[0] )
+         ax1.loglog( r_do, pdf_r, label='PDF model values', marker='o', color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1] )
+         ax1.set_xlim(0, r_lim)
+         ax1.set_xscale('linear')
+         ax1.legend()
+         
+         # Plot histograms in linear scale
+         ax2.hist( R, range=(0,1.0), density=True, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2, label='Data histogram' )
+         ax2.plot( r_do, pdf_r, color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1], label='Model probability' )
          
          if DISTR_TYPE == 1 :
-            ax1.set_title('Polylogarithmic exp. distribution model fit, $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
+            ax1.set_title('Polylogarithmic exp. distr. model fit (log-scale), $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
+            ax2.set_title('Polylogarithmic exp. distr. model fit, $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
          else :
-            ax1.set_title('Shifted-geometric exp. distribution model fit, $\\tau='+str(round(tau,2))+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
+            ax1.set_title('Shifted-geometric exp. distr. model fit (log-scale), $\\tau='+str(round(tau,2))+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
+            ax2.set_title('Shifted-geometric exp. distr. model fit, $\\tau='+str(round(tau,2))+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
          
-         str_suffix = 'BINARY'
-         ax1.set_xlabel('$n$ (number of active neurons)',fontsize=18)
-         ax1.set_ylabel('Count per bin',fontsize=18)
+         str_suffix = '_POP_RATE'
+         ax1.set_xlabel('$r$ (population rate)',fontsize=18)
+         ax1.set_ylabel('Count per bin (Log-scale)',fontsize=18)
          ax1.grid()
-         ax1.legend().remove()
+         
+         ax2.set_xlabel('$r$ (population rate)',fontsize=18)
+         ax2.set_ylabel('Probability (normalized bin count)',fontsize=18)
+         ax2.grid()
          
          if DISTR_TYPE == 1 :
             fig.savefig(OUT_FOLDER+'/MODEL_FIT_POLYLOGARITHM_m'+str(m)+'_f'+str(round(f,2))+str_suffix+'_'+file_n+'.png')

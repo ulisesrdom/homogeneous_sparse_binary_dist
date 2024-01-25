@@ -18,13 +18,13 @@ cimport cython
 def Ei( double x ):
    cdef:
       int k,i
-      double ei,fact
+      double ei,term
    ei        = 0.5772156649 + log( x )
-   for k in range(1,50):#45):
-      # fact[k] = factorial( k )
-      fact   = np.double(k)
-      for i in range(2,k):
-         fact = fact * (np.double(i))
-      #printf("factorial at k=%i : %f\n",k,fact)
-      ei     = ei + ( pow( x, np.double(k) ) / ( (np.double(k)) * fact ) )
+   #for k in range(1,50):
+   for k in range(1,150):
+      term   = x / np.double(k*k)
+      for i in range(1,k):
+         term= term * ( x / np.double(i))
+      #printf("term at k=%i : %f\n",k,term)
+      ei     = ei + term
    return ei
