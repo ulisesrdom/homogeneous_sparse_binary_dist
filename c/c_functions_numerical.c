@@ -109,3 +109,41 @@ void c_der_ll_sg_r_wrt_tau_part( int i, float *ll_batch, float f, float tau, flo
    s             = ( R[i] / pow( 1.0 + ( tau*R[i] ) , 2.0 )  ) ;
    ll_batch[ i ] = -f * s ;
 }
+
+// -----------------------------------------------------------------------------------------------
+// Compute part of the derivative of the log-likelihood function with respect to the sparsity-
+// inducing parameter f for the first-order interactions exp. distr. case for the population rate
+// variable.
+// Inputs :
+//    i       (integer value with the index in 0 to Ns-1 that identifies a sample in R, where 
+//             Ns is the number of samples).
+//    ll_batch (pointer to float array where the results of the function are to be stored for
+//            each sample).
+//    R       (pointer to float array where each pop. rate sample is stored; R[ i ]
+//             stores the number of active neurons divided by N (the population size) for the
+//             i-th sample).
+// Outputs:
+//    void    (no return value).
+// -----------------------------------------------------------------------------------------------
+void c_der_ll_first_o_r_wrt_f_part( int i, float *ll_batch, float *R ){
+   ll_batch[ i ] = - R[i] ;
+}
+
+// -----------------------------------------------------------------------------------------------
+// Compute part of the derivative of the log-likelihood function with respect to the second-order
+// parameter f2 for the second-order interactions exp. distr. case for the population rate
+// variable.
+// Inputs :
+//    i       (integer value with the index in 0 to Ns-1 that identifies a sample in R, where 
+//             Ns is the number of samples).
+//    ll_batch (pointer to float array where the results of the function are to be stored for
+//            each sample).
+//    R       (pointer to float array where each pop. rate sample is stored; R[ i ]
+//             stores the number of active neurons divided by N (the population size) for the
+//             i-th sample).
+// Outputs:
+//    void    (no return value).
+// -----------------------------------------------------------------------------------------------
+void c_der_ll_second_o_r_wrt_f2_part( int i, float *ll_batch, float *R ){
+   ll_batch[ i ] = R[i] * R[i] ;
+}

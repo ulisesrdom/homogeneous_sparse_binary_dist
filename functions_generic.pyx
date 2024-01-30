@@ -2,7 +2,7 @@ import numpy as np
 import functions_special as f_sp
 from libc.stdio cimport printf
 from cython import boundscheck, wraparound
-from libc.math cimport pow,sqrt,exp,log,fabs
+from libc.math cimport pow,sqrt,exp,log,fabs,M_PI
 
 cimport numpy as np
 cimport cython
@@ -82,6 +82,65 @@ def shifted_geometric_pdf( np.ndarray[float,ndim=1,mode="c"] p,\
    Z          = ((1. + tau) / tau)*exp( x_1 - f ) - ((f*exp(-f) / tau) * Ei_1)
    Z          = Z - ( (1. / tau) - ((f*exp(-f) / tau) * Ei_0) )
    #printf("Z =%f\n",Z)
+   for pi in range(0,npoints):
+      p[ pi ] = p[ pi ] / Z
+   return None
+
+# -----------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------
+# Function to compute the probability density function (PDF) for the continuous population rate
+# considering the first-order interactions exponential PDF.
+# Parameters:
+# ---p        : float array where each of the npoints values of the discretized probability
+#               density function will be stored.
+# ---r        : float array with the population rate values in [0,1] to evaluate.
+# ---npoints  : integer value with the number of discrete points to evaluate.
+# ---f        : float value with the sparsity inducing parameter.
+# Returns:
+# ---No return value. The probability density function values are stored in the p array.
+@boundscheck(False)
+@wraparound(False)
+def first_ord_pdf( np.ndarray[float,ndim=1,mode="c"] p,\
+                   np.ndarray[float,ndim=1,mode="c"] r, int npoints, float f ):
+   cdef:
+      int pi
+      double Z
+   for pi in range(0,npoints):
+      p[ pi ] = exp( -f* r[ pi ] )
+   
+   Z          = (1.0 - exp(-f)) / f
+   for pi in range(0,npoints):
+      p[ pi ] = p[ pi ] / Z
+   return None
+
+# -----------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------
+# Function to compute the probability density function (PDF) for the continuous population rate
+# considering the second-order interactions exponential PDF.
+# Parameters:
+# ---p        : float array where each of the npoints values of the discretized probability
+#               density function will be stored.
+# ---r        : float array with the population rate values in [0,1] to evaluate.
+# ---npoints  : integer value with the number of discrete points to evaluate.
+# ---f1       : float value with the sparsity inducing parameter.
+# ---f2       : float value with the cuadratic coefficient parameter.
+# Returns:
+# ---No return value. The probability density function values are stored in the p array.
+@boundscheck(False)
+@wraparound(False)
+def second_ord_pdf( np.ndarray[float,ndim=1,mode="c"] p,\
+                    np.ndarray[float,ndim=1,mode="c"] r, int npoints, float f1, float f2 ):
+   cdef:
+      int pi
+      double Z,erfi_0,erfi_1,K,s
+   for pi in range(0,npoints):
+      p[ pi ] = exp( -(f1 * r[ pi ]) + (f2 * r[pi] * r[pi] )  )
+   
+   s          = f1 / ( 2.0 * sqrt(f2) )
+   K          = ( sqrt( M_PI ) / (2.0 * sqrt(f2)) ) * exp( -(s*s) )
+   erfi_0     = f_sp.erfi( s )
+   erfi_1     = f_sp.erfi( s - sqrt(f2) )
+   Z          = K * ( erfi_0 - erfi_1 )
    for pi in range(0,npoints):
       p[ pi ] = p[ pi ] / Z
    return None

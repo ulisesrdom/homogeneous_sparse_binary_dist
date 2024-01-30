@@ -255,6 +255,9 @@ def model_fit_polylogarithmic_r(  np.ndarray[float,ndim=1,mode="c"] R, \
       float f,s1,s2
    cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
    cdef float[:] lZ_der_wrt_f     = np.zeros((N+1,),dtype=np.float32)
+   #cdef float[:] pdf_r            = np.zeros((N+1,),dtype=np.float32)
+   pdf_r                          = np.zeros((N+1,),dtype=np.float32)
+   pdf_r                          = pdf_r.copy(order='C')
    
    # Initialize parameters
    f         = f_init
@@ -281,8 +284,9 @@ def model_fit_polylogarithmic_r(  np.ndarray[float,ndim=1,mode="c"] R, \
          for i in range(0,N+1):
             c_der_ll_poly_r_wrt_f_part( i, &lZ_der_wrt_f[0], M_TERMS,m, &r_dom[0] )
          
-         pdf_r  = np.zeros((N+1,),dtype=np.float32)
-         pdf_r  = pdf_r.copy(order='C')
+         for i in range(0,N+1):
+            pdf_r[i] = 0.0
+         #pdf_r[:] = np.zeros((N+1,),dtype=np.float32)
          f_gen.polylogarithmic_pdf( pdf_r, r_dom, N+1, f, m, M_TERMS )
          # Collapse batch results
          s2  = 0.0
@@ -307,7 +311,7 @@ def model_fit_polylogarithmic_r(  np.ndarray[float,ndim=1,mode="c"] R, \
            s2= s1
            m = m_p
       eta    = eta / (1.0 + (0.0001)*float(ite))
-      print("model_fit_polylogarithmic:: iteration {}, f={}, m={}".format(ite,f,m))
+      print("model_fit_polylogarithmic_r:: iteration {}, f={}, m={}".format(ite,f,m))
    return f,m
 
 # -----------------------------------------------------------------------------------------------
@@ -322,8 +326,6 @@ def model_fit_polylogarithmic_r(  np.ndarray[float,ndim=1,mode="c"] R, \
 #               variable (points 0/N, 1/N, 2/N, ..., N/N).
 # ---N        : integer value with the size of the neural population in each sample.
 # ---Ns       : integer value with the number of samples in the binary data.
-# ---M        : integer value with the number of Gibbs samples to produce for the derivative
-#               of the normalization function with respect to the f parameter.
 # ---eta      : float value with the learning rate for locally optimizing the f-parameter.
 # ---eta_tau  : float value with the learning rate for locally optimizing the tau-parameter.
 # ---f_init   : float value with the initial value for the sparsity inducing parameter.
@@ -343,7 +345,8 @@ def model_fit_shifted_geom_r( np.ndarray[float,ndim=1,mode="c"] R, \
       float f,s1,s2,tau
    cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
    cdef float[:] lZ_der_batch     = np.zeros((N+1,),dtype=np.float32)
-   
+   pdf_r                          = np.zeros((N+1,),dtype=np.float32)
+   pdf_r                          = pdf_r.copy(order='C')
    # Initialize parameters
    f         = f_init
    tau       = tau_init
@@ -369,8 +372,9 @@ def model_fit_shifted_geom_r( np.ndarray[float,ndim=1,mode="c"] R, \
          for i in range(0,N+1):
             c_der_ll_sg_r_wrt_f_part( i, &lZ_der_batch[0], tau, &r_dom[0] )
          
-         pdf_r  = np.zeros((N+1,),dtype=np.float32)
-         pdf_r  = pdf_r.copy(order='C')
+         #pdf_r[:]  = np.zeros((N+1,),dtype=np.float32)
+         for i in range(0,N+1):
+            pdf_r[i] = 0.0
          f_gen.shifted_geometric_pdf( pdf_r, r_dom, N+1, f, tau)
          # Collapse batch results
          s2  = 0.0
@@ -400,6 +404,11 @@ def model_fit_shifted_geom_r( np.ndarray[float,ndim=1,mode="c"] R, \
          # Computation of second part of log-likelihood derivative
          for i in range(0,N+1):
             c_der_ll_sg_r_wrt_tau_part( i, &lZ_der_batch[0], f, tau, &r_dom[0] )
+         
+         #pdf_r[:]  = np.zeros((N+1,),dtype=np.float32)
+         for i in range(0,N+1):
+            pdf_r[i] = 0.0
+         f_gen.shifted_geometric_pdf( pdf_r, r_dom, N+1, f, tau)
          # Collapse batch results
          s2  = 0.0
          for i in range(0,N+1):
@@ -411,8 +420,186 @@ def model_fit_shifted_geom_r( np.ndarray[float,ndim=1,mode="c"] R, \
             tau = 1.0
       eta    = eta / (1.0 + (0.0001)*float(ite))
       eta_tau= eta_tau / (1.0 + (0.0001)*float(ite))
-      print("model_fit_shifted_geom:: iteration {}, f={}, tau={}".format(ite,f,tau))
+      print("model_fit_shifted_geom_r:: iteration {}, f={}, tau={}".format(ite,f,tau))
    return f,tau
+
+# -----------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------
+# Function to fit the first-order interactions exponential distr. model to a given dataset of
+# population rates (number of active neurons divided by the population size), assummed to come
+# from spontaneous neural activity.
+# Parameters:
+# ---R        : float one-dimensional array with Ns population rate samples from spontaneous
+#               data, with population size N.
+# ---r_dom    : float one-dimensional array with the domain values for the population rate
+#               variable (points 0/N, 1/N, 2/N, ..., N/N).
+# ---N        : integer value with the size of the neural population in each sample.
+# ---Ns       : integer value with the number of samples in the binary data.
+# ---eta      : float value with the learning rate for optimizing the f-parameter.
+# ---f_init   : float value with the initial value for the sparsity inducing parameter.
+# ---MAX_ITE  : integer value with the maximum number of optimization iterations.
+# ---T        : integer value with the maximum number of local optimization iterations.
+# Returns:
+# ---Fitted parameter: f, the sparsity inducing parameter.
+@boundscheck(False)
+@wraparound(False)
+def model_fit_first_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
+                           np.ndarray[float,ndim=1,mode="c"] r_dom, int N, int Ns, \
+                           float eta, float f_init, int MAX_ITE, int T ):
+   cdef:
+      int ite,t,i
+      float f,s1,s2
+   cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
+   cdef float[:] lZ_der_batch     = np.zeros((N+1,),dtype=np.float32)
+   pdf_r                          = np.zeros((N+1,),dtype=np.float32)
+   pdf_r                          = pdf_r.copy(order='C')
+   
+   # Initialize parameters
+   f         = f_init
+   # Iterative optimization
+   for ite in range(1,MAX_ITE+1):
+      # Locally optimize for the sparsity inducing parameter f
+      # ---------------------------------------------------------------------------
+      for t in range(1,T+1):
+         for i in range(0,Ns):
+            ll_batch[i]     = 0.0
+         for i in range(0,N+1):
+            lZ_der_batch[i] = 0.0
+         # Computation of first part of log-likelihood derivative
+         for i in range(0,Ns):
+            c_der_ll_first_o_r_wrt_f_part( i, &ll_batch[0], &R[0] )
+         # Collapse batch results
+         s1  = 0.0
+         for i in range(0,Ns):
+           s1= s1 + ll_batch[ i ]
+         s1  = s1 / float( Ns )
+         
+         # Computation of second part of log-likelihood derivative
+         for i in range(0,N+1):
+            c_der_ll_first_o_r_wrt_f_part( i, &lZ_der_batch[0], &r_dom[0] )
+         
+         #pdf_r[:] = np.zeros((N+1,),dtype=np.float32)
+         for i in range(0,N+1):
+            pdf_r[i] = 0.0
+         f_gen.first_ord_pdf( pdf_r, r_dom, N+1, f )
+         # Collapse batch results
+         s2  = 0.0
+         for i in range(0,N+1):
+           s2= s2 + ( pdf_r[ i ] * lZ_der_batch[ i ])
+         
+         f   = f + (eta*(s1-s2))
+         if f < 0.0 :
+            f = 0.0
+      
+      eta    = eta / (1.0 + (0.0001)*float(ite))
+      print("model_fit_first_ord_r:: iteration {}, f={}".format(ite,f))
+   return f
+
+# -----------------------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------
+# Function to fit the second-order interactions exponential distr. model to a given dataset of
+# population rates (number of active neurons divided by the population size), assummed to come
+# from spontaneous neural activity.
+# Parameters:
+# ---R        : float one-dimensional array with Ns population rate samples from spontaneous
+#               data, with population size N.
+# ---r_dom    : float one-dimensional array with the domain values for the population rate
+#               variable (points 0/N, 1/N, 2/N, ..., N/N).
+# ---N        : integer value with the size of the neural population in each sample.
+# ---Ns       : integer value with the number of samples in the binary data.
+# ---eta1      : float value with the learning rate for optimizing the f1-parameter.
+# ---eta2      : float value with the learning rate for optimizing the f2-parameter.
+# ---f_init   : float value with the initial value for parameters.
+# ---MAX_ITE  : integer value with the maximum number of optimization iterations.
+# ---T        : integer value with the maximum number of local optimization iterations.
+# Returns:
+# ---Fitted parameters: f1 and f2.
+@boundscheck(False)
+@wraparound(False)
+def model_fit_second_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
+                           np.ndarray[float,ndim=1,mode="c"] r_dom, int N, int Ns, \
+                           float eta1, float eta2, float f_init, int MAX_ITE, int T ):
+   cdef:
+      int ite,t,i
+      float f1,f2,s1,s2
+   cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
+   cdef float[:] lZ_der_batch     = np.zeros((N+1,),dtype=np.float32)
+   pdf_r                          = np.zeros((N+1,),dtype=np.float32)
+   pdf_r                          = pdf_r.copy(order='C')
+   
+   # Initialize parameters
+   f1        = f_init
+   f2        = f_init
+   # Iterative optimization
+   for ite in range(1,MAX_ITE+1):
+      # Locally optimize for the sparsity inducing parameter f1
+      # ---------------------------------------------------------------------------
+      for t in range(1,T+1):
+         for i in range(0,Ns):
+            ll_batch[i]     = 0.0
+         for i in range(0,N+1):
+            lZ_der_batch[i] = 0.0
+         # Computation of first part of log-likelihood derivative
+         for i in range(0,Ns):
+            c_der_ll_first_o_r_wrt_f_part( i, &ll_batch[0], &R[0] )
+         # Collapse batch results
+         s1  = 0.0
+         for i in range(0,Ns):
+           s1= s1 + ll_batch[ i ]
+         s1  = s1 / float( Ns )
+         
+         # Computation of second part of log-likelihood derivative
+         for i in range(0,N+1):
+            c_der_ll_first_o_r_wrt_f_part( i, &lZ_der_batch[0], &r_dom[0] )
+         
+         #pdf_r[:] = np.zeros((N+1,),dtype=np.float32)
+         for i in range(0,N+1):
+            pdf_r[i] = 0.0
+         f_gen.second_ord_pdf( pdf_r, r_dom, N+1, f1,f2 )
+         # Collapse batch results
+         s2  = 0.0
+         for i in range(0,N+1):
+           s2= s2 + ( pdf_r[ i ] * lZ_der_batch[ i ])
+         
+         f1  = f1 + (eta1*(s1-s2))
+         if f1 < 0.0 :
+            f1 = 0.0
+      
+      # Locally optimize for the second-order parameter f2
+      # ---------------------------------------------------------------------------
+      for t in range(1,T+1):
+         for i in range(0,Ns):
+            ll_batch[i]     = 0.0
+         for i in range(0,N+1):
+            lZ_der_batch[i] = 0.0
+         # Computation of first part of log-likelihood derivative
+         for i in range(0,Ns):
+            c_der_ll_second_o_r_wrt_f2_part( i, &ll_batch[0], &R[0] )
+         # Collapse batch results
+         s1  = 0.0
+         for i in range(0,Ns):
+           s1= s1 + ll_batch[ i ]
+         s1  = s1 / float( Ns )
+         
+         # Computation of second part of log-likelihood derivative
+         for i in range(0,N+1):
+            c_der_ll_second_o_r_wrt_f2_part( i, &lZ_der_batch[0], &r_dom[0] )
+         
+         #pdf_r[:] = np.zeros((N+1,),dtype=np.float32)
+         for i in range(0,N+1):
+            pdf_r[i] = 0.0
+         f_gen.second_ord_pdf( pdf_r, r_dom, N+1, f1,f2 )
+         # Collapse batch results
+         s2  = 0.0
+         for i in range(0,N+1):
+           s2= s2 + ( pdf_r[ i ] * lZ_der_batch[ i ] )
+         f2  = f2 + (eta2*(s1-s2))
+         if f2 < 0 :
+            f2 = 0.
+      eta1   = eta1 / (1.0 + (0.0001)*float(ite))
+      eta2   = eta2 / (1.0 + (0.0001)*float(ite))
+      print("model_fit_second_ord_r:: iteration {}, f1={}, f2={}".format(ite,f1,f2))
+   return f1,f2
 
 # -----------------------------------------------------------------------------------------------
 # -----------------------------------------------------------------------------------------------
@@ -428,3 +615,5 @@ cdef extern from "c/c_functions_numerical.h" nogil:
    void c_log_likelihood_poly_r_part_i( int i, float *R, float *ll_batch, int M_terms, float f, float m )
    void c_der_ll_sg_r_wrt_f_part( int i, float *ll_batch, float tau, float *R )
    void c_der_ll_sg_r_wrt_tau_part( int i, float *ll_batch, float f, float tau, float *R )
+   void c_der_ll_first_o_r_wrt_f_part( int i, float *ll_batch, float *R )
+   void c_der_ll_second_o_r_wrt_f2_part( int i, float *ll_batch, float *R )

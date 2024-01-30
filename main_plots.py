@@ -774,13 +774,13 @@ def plot_histogram( SAMPLING_TYPE, DISTR_TYPE, N_SAMP,N_BINS,N, BASE_PARAMS,\
 
 # -----------------------------------------------------------------------------------------------
 # -----------------------------------------------------------------------------------------------
-# Function to fit the model parameters from a selected distribution to a given dataset under the
-# maximum likelihood principle. This function also shows a plot of the fitted model on top of the
-# data histogram.
+# Function to fit the model(s) parameters from a selected distribution to a given dataset under
+# the maximum likelihood principle. This function also shows a plot of the fitted model(s) on top
+# of the data histogram.
 # Parameters:
 # ---DISTR_TYPE: integer value to select a distribution to sample from. The options are:
 #                polylogarithmic exponential (1); shifted-geometric exponential (2);
-#                polylogarithmic and shifted-geometric exponential for joint plot (3).
+#                polylogarithmic and shifted-geometric exp. vs 1st and 2nd order models for comparison (3).
 # ---N_SAMP    : integer value with the number of samples to draw for each distribution.
 # ---N_BINS    : integer value with the number of bins for each histogram.
 # ---BASE_PARAMS: string with comma separated baseline parameter values for each
@@ -795,8 +795,10 @@ def plot_histogram( SAMPLING_TYPE, DISTR_TYPE, N_SAMP,N_BINS,N, BASE_PARAMS,\
 #                tau parameter, eta is the learning rate for the f parameter, eta_tau is the learning rate
 #                for the tau parameter, MAX_ITE is the maximum number of global optimization iterations and
 #                T is the number of local optimization iterations.
-#                For DISTR_TYPE=3 the format is 'f_init,m_min,m_max,tau_init,M_TERMS,eta,eta_tau,MAX_ITE,T'
-#                where the parameter names are the same as in the previous two cases.
+#                For DISTR_TYPE=3 the format is 'f_init,m_min,m_max,tau_init,M_TERMS,eta,eta_tau,eta_f5,
+#                MAX_ITE,T' where the parameter names are the same as in the previous two cases with the
+#                addition of eta_f5 for the learning rate of the second parameter in the second-order
+#                interactions exp. distr.
 # ---IN_FILES:   list of pickle file names for the binary spiking data.
 # ---IN_FOLDER:  string value with the input folder, where the spiking data pickle files
 #                are located.
@@ -895,7 +897,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          
       else :
          # -----------------------------------------------------------------------------
-         # Both exp. distributions case
+         # All distributions case for comparison
          
          f_init    = float(B_PARAMS[0])
          m_min     = int(B_PARAMS[1])
@@ -904,75 +906,85 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          M_TERMS   = int(B_PARAMS[4])
          eta       = float(B_PARAMS[5])
          eta_tau   = float(B_PARAMS[6])
-         MAX_ITE   = int(B_PARAMS[7])
-         T         = int(B_PARAMS[8])
+         eta_f5    = float(B_PARAMS[7])
+         MAX_ITE   = int(B_PARAMS[8])
+         T         = int(B_PARAMS[9])
          
          # Fit the parameters of the polylogarithmic exp. distr. to the data
+         # ---------------------------------------------------------------------
          f,m       = f_nume.model_fit_polylogarithmic_r(  R, r_do, N,Ns,M_TERMS, eta, f_init,m_min,m_max, MAX_ITE,T )
          # Compute analytic solution with found parameters
          f_gen.polylogarithmic_pdf( pdf_r, r_do, N+1, f, m, M_TERMS )
          
          # Fit the parameters of the shifted-geometric exp. distr. to the data
+         # ---------------------------------------------------------------------
          f2,tau    = f_nume.model_fit_shifted_geom_r(  R, r_do, N,Ns, eta,eta_tau, f_init,tau_init, MAX_ITE,T )
          # Compute analytic solution with found parameters
          pdf_r2    = np.zeros((N+1,),dtype=np.float32)
          pdf_r2    = pdf_r2.copy(order='C')
          f_gen.shifted_geometric_pdf( pdf_r2, r_do, N+1, f2, tau)
-      
+         
+         # Fit the parameter of the 1st order interactions exp. distr.
+         # (truncated exp. distr.) to the data
+         # ---------------------------------------------------------------------
+         f3        = f_nume.model_fit_first_ord_r(  R, r_do, N,Ns, eta, f_init, MAX_ITE,T )
+         # Compute analytic solution with found parameters
+         pdf_r3    = np.zeros((N+1,),dtype=np.float32)
+         pdf_r3    = pdf_r3.copy(order='C')
+         f_gen.first_ord_pdf( pdf_r3, r_do, N+1, f3 )
+         
+         # Fit the parameter of the 2nd order interactions exp. distr. to the
+         # data
+         # ---------------------------------------------------------------------
+         f4, f5    = f_nume.model_fit_second_ord_r(  R, r_do, N,Ns, eta, eta_f5, f_init, MAX_ITE,T )
+         
+         # Compute analytic solution with found parameters
+         pdf_r4    = np.zeros((N+1,),dtype=np.float32)
+         pdf_r4    = pdf_r4.copy(order='C')
+         f_gen.second_ord_pdf( pdf_r4, r_do, N+1, f4,f5 )
+         
       # Show plot with the histogram of the spiking data
       # --------------------------------------------------------------------------------
       if DISTR_TYPE == 3 :
-         fig, axes = plt.subplots( nrows=2, ncols=2, figsize=(20, 12), dpi=DPI )
+         fig, (ax1, ax2) = plt.subplots( nrows=1, ncols=2, figsize=(20, 6), dpi=DPI )
          fig.subplots_adjust(wspace = 0.6, hspace = 0.6)
          
          # Create histograms
-         r_lim                   = (max_per_sample+1.)/float(N)
-         hist_data, edges_data   = np.histogram( R  , range=(0.0,1.0), bins=N_BINS, density=True )
+         r_lim     = (max_per_sample+1.)/float(N)
+         hist_data, edges_data = np.histogram( R  , range=(0.0,1.0), bins=N_BINS, density=True )
          
+         i_min     = r_do.shape[0]
+         if pdf_r.shape[0] < i_min :
+            i_min= pdf_r.shape[0]
          # Plot histograms in log-scale
-         axes[0,0].loglog( edges_data[:-1], hist_data, label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle=LINE_STYLES[0] )
-         axes[0,0].loglog( r_do, pdf_r, label='PDF model values', marker='o', color=COLOR_LIST[1], alpha=0.7, linestyle=LINE_STYLES[1] )
-         axes[0,0].set_xlim(0,r_lim)
-         axes[0,0].set_xscale('linear')
-         axes[0,0].legend()
-         
-         axes[1,0].loglog( edges_data[:-1], hist_data, label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle=LINE_STYLES[0] )
-         axes[1,0].loglog( r_do, pdf_r2, label='PDF model values', marker='o', color=COLOR_LIST[1], alpha=0.7, linestyle=LINE_STYLES[1] )
-         axes[1,0].set_xlim(0,r_lim)
-         axes[1,0].set_xscale('linear')
-         axes[1,0].legend()
+         ax1.loglog( edges_data[:-1], hist_data, label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle=LINE_STYLES[0] )
+         ax1.loglog( r_do[:i_min], pdf_r[:i_min], label='Polylogarithmic', marker='o', color=COLOR_LIST[1%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1%size_lsty] )
+         ax1.loglog( r_do[:i_min], pdf_r2[:i_min], label='Shifted-geometric', marker='o', color=COLOR_LIST[2%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[2%size_lsty] )
+         ax1.loglog( r_do[:i_min], pdf_r3[:i_min], label='First-order', marker='o', color=COLOR_LIST[3%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[3%size_lsty] )
+         ax1.loglog( r_do[:i_min], pdf_r4[:i_min], label='Second-order', marker='o', color=COLOR_LIST[4%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[4%size_lsty] )
+         ax1.set_xlim(0, r_lim)
+         ax1.set_xscale('linear')
+         ax1.legend()
          
          # Plot histograms in linear scale
-         axes[0,1].hist( R, range=(0,1.0), density=True, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2, label='Data histogram' )
-         axes[0,1].plot( r_do, pdf_r, color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1], label='Model probability' )
+         ax2.hist( R, range=(0,1.0), density=True, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2, label='Data histogram' )
+         ax2.plot( r_do[:i_min], pdf_r[:i_min], color=COLOR_LIST[1 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1 % size_lsty], label='Polylogarithmic' )
+         ax2.plot( r_do[:i_min], pdf_r2[:i_min], color=COLOR_LIST[2 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[2 % size_lsty], label='Shifted-geometric' )
+         ax2.plot( r_do[:i_min], pdf_r3[:i_min], color=COLOR_LIST[3 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[3 % size_lsty], label='First-order' )
+         ax2.plot( r_do[:i_min], pdf_r4[:i_min], color=COLOR_LIST[4 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[4 % size_lsty], label='Second-order' )
+         ax2.set_xlim(0, r_lim)
          
-         axes[1,1].hist( R, range=(0,1.0), density=True, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2, label='Data histogram' )
-         axes[1,1].plot( r_do, pdf_r2, color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1], label='Model probability' )
-         #print("SG PDF = {}".format(pdf_r2))
-         
-         axes[0,0].set_title('Polylogarithmic exp. distr. model fit (log-scale), $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
-         axes[0,1].set_title('Polylogarithmic exp. distr. model fit, $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
-         axes[1,0].set_title('Shifted-geometric exp. distr. model fit (log-scale), $\\tau='+str(round(tau,2))+'$,$f='+str(round(f2,2))+'$',fontsize=20,pad=20)
-         axes[1,1].set_title('Shifted-geometric exp. distr. model fit, $\\tau='+str(round(tau,2))+'$,$f='+str(round(f2,2))+'$',fontsize=20,pad=20)
+         ax1.set_title('Models fit (log-scale), SG: $\\tau='+str(round(tau,2))+'$,$f='+str(round(f2,2))+'$, PL: $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
+         ax2.set_title('Models fit, SG: $\\tau='+str(round(tau,2))+'$,$f='+str(round(f2,2))+'$, PL: $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
          
          str_suffix = '_POP_RATE'
-         axes[0,0].set_xlabel('$r$ (population rate)',fontsize=18)
-         axes[0,0].set_ylabel('Count per bin (Log-scale)',fontsize=18)
-         axes[0,0].grid()
+         ax1.set_xlabel('$r$ (population rate)',fontsize=18)
+         ax1.set_ylabel('Count per bin (Log-scale)',fontsize=18)
+         ax1.grid()
          
-         axes[0,1].set_xlabel('$r$ (population rate)',fontsize=18)
-         axes[0,1].set_ylabel('Normalized bin count',fontsize=18)
-         axes[0,1].grid()
-         axes[0,1].legend()
-         
-         axes[1,0].set_xlabel('$r$ (population rate)',fontsize=18)
-         axes[1,0].set_ylabel('Count per bin (Log-scale)',fontsize=18)
-         axes[1,0].grid()
-         
-         axes[1,1].set_xlabel('$r$ (population rate)',fontsize=18)
-         axes[1,1].set_ylabel('Normalized bin count',fontsize=18)
-         axes[1,1].grid()
-         axes[1,1].legend()
+         ax2.set_xlabel('$r$ (population rate)',fontsize=18)
+         ax2.set_ylabel('Probability (normalized bin count)',fontsize=18)
+         ax2.grid()
          
          fig.savefig(OUT_FOLDER+'/MODEL_FIT_POLY_SHIFTGEOM_m'+str(m)+'_f'+str(round(f,2))+str_suffix+'_tau'+str(round(tau,2))+'_f'+str(round(f2,2))+'_'+file_n+'.png')
          
@@ -984,16 +996,19 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          r_lim  = (max_per_sample+1.)/float(N)
          hist_data, edges_data = np.histogram( R  , range=(0.0,1.0), bins=N_BINS, density=True )
          
+         i_min     = r_do.shape[0]
+         if pdf_r.shape[0] < i_min :
+            i_min= pdf_r.shape[0]
          # Plot histograms in log-scale
          ax1.loglog( edges_data[:-1], hist_data, label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle=LINE_STYLES[0] )
-         ax1.loglog( r_do, pdf_r, label='PDF model values', marker='o', color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1] )
+         ax1.loglog( r_do[:i_min], pdf_r[:i_min], label='PDF model values', marker='o', color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1] )
          ax1.set_xlim(0, r_lim)
          ax1.set_xscale('linear')
          ax1.legend()
          
          # Plot histograms in linear scale
          ax2.hist( R, range=(0,1.0), density=True, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2, label='Data histogram' )
-         ax2.plot( r_do, pdf_r, color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1], label='Model probability' )
+         ax2.plot( r_do[:i_min], pdf_r[:i_min], color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1], label='Model probability' )
          
          if DISTR_TYPE == 1 :
             ax1.set_title('Polylogarithmic exp. distr. model fit (log-scale), $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
