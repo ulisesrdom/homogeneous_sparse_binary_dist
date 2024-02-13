@@ -143,6 +143,11 @@ def second_ord_pdf( np.ndarray[float,ndim=1,mode="c"] p,\
    Z          = K * ( erfi_0 - erfi_1 )
    for pi in range(0,npoints):
       p[ pi ] = p[ pi ] / Z
+   '''Z          = 0.0
+   for pi in range(0,npoints):
+      Z       = Z + p[ pi ]
+   for pi in range(0,npoints):
+      p[ pi ] = p[ pi ] / Z'''
    return None
 
 # -----------------------------------------------------------------------------------------------

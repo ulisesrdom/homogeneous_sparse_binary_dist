@@ -194,8 +194,10 @@ def plot_PDF( DISTR_TYPE, N, BASE_PARAMS, OUT_FOLDER, PPARAM_LST ):
       ax1.set_yscale("log")
       ax1.set_xlim(xmin=0.03,xmax=10)
       ax1.set_ylim(ymin=0.03,ymax=10)
-      ax1.set_xlabel("exp$[\;f\;Li_m[-r]\;] \;/\;Z$",fontsize=18)
-      ax1.set_ylabel("exp$[-f C_1 r + ... + (-1)^k f C_k r^k\;]\;/\;Z\;$",fontsize=18)
+      #ax1.set_xlabel("exp$[\;f\;Li_m[-r]\;] \;/\;Z$",fontsize=18)
+      #ax1.set_ylabel("exp$[-f C_1 r + ... + (-1)^k f C_k r^k\;]\;/\;Z\;$",fontsize=18)
+      ax1.set_xlabel("$\;f\;Li_m[-r]\;$ -log($;Z$)",fontsize=18)
+      ax1.set_ylabel("-f C_1 r + ... + (-1)^k f C_k r^k\;$-log($\;Z\;$)",fontsize=18)
       ax1.grid()
       ax1.legend(prop={'size': 16},loc='best')
       ax1.set_box_aspect(1)
@@ -237,8 +239,10 @@ def plot_PDF( DISTR_TYPE, N, BASE_PARAMS, OUT_FOLDER, PPARAM_LST ):
       ax1.set_yscale("log")
       ax1.set_xlim(xmin=0.03,xmax=10)
       ax1.set_ylim(ymin=0.03,ymax=10)
-      ax1.set_xlabel("exp$[\;f\;(1/(1+\\tau r) - 1)\;] \;/\;Z$",fontsize=18)
-      ax1.set_ylabel("exp$[-f C_1 r + ... + (-1)^k f C_k r^k\;]\;/\;Z\;$",fontsize=18)
+      #ax1.set_xlabel("exp$[\;f\;(1/(1+\\tau r) - 1)\;] \;/\;Z$",fontsize=18)
+      #ax1.set_ylabel("exp$[-f C_1 r + ... + (-1)^k f C_k r^k\;]\;/\;Z\;$",fontsize=18)
+      ax1.set_xlabel("$\;f\;(1/(1+\\tau r) - 1)\;$ -log($\;Z\;$)",fontsize=18)
+      ax1.set_ylabel("$-f C_1 r + ... + (-1)^k f C_k r^k\;$ -log($\;Z\;$)",fontsize=18)
       ax1.grid()
       ax1.legend(prop={'size': 16},loc='best')
       ax1.set_box_aspect(1)
@@ -831,19 +835,22 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
       else:
          full_n = IN_FOLDER + '/' + file_n
       X      = np.asarray( pk.load( open( full_n, 'rb' ) ) , dtype=np.int32 )
-      Ntri   = X.shape[1]
-      N      = X.shape[2]
-      Tim    = X.shape[0]
-      print("Time points = {}, Trials = {}, No. Neurons = {}".format(Tim,Ntri,N))
-      X      = X.reshape( Tim * Ntri , N )
-      Ns     = Tim * Ntri
+      Ns     = X.shape[0]
+      N      = X.shape[1]
       # Sub-sample for faster fit and comparable scale
-      if Ns > N_SAMP :
-       ind   = np.arange(0,Ns)
-       ind_s = np.random.choice( ind, size=N_SAMP, replace=False)
-       X     = X[ ind_s, :]
-       Ns    = N_SAMP
+      Ns_t   = 0
+      if N_SAMP > Ns :
+         N_SAMP= Ns
+         print("Number of samples set at the maximum available of {}".format(Ns))
+      ind    = np.arange(0,Ns)
+      ind_s  = np.random.choice( ind, size=N_SAMP, replace=False)
+      Ns_test= int( 0.2 * N_SAMP )
+      Ns     = N_SAMP - Ns_test
+      print("Number of samples: {} (training), {} (testing)".format(Ns,Ns_test))
+      X_test = X[ ind_s[Ns:(Ns+Ns_test)], :]
+      X      = X[ ind_s[0:Ns], :]
       R      = np.zeros((Ns,),dtype=np.float32)
+      R_test = np.zeros((Ns_test,),dtype=np.float32)
       
       max_per_sample = 0
       for i in range(0,Ns):
@@ -851,11 +858,17 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          R[ i ]      = float( n_act ) / float( N )
          if n_act > max_per_sample :
             max_per_sample = np.sum( X[i,:] )
+      for i in range(0,Ns_test):
+         n_act       = np.sum( X_test[i,:] )
+         R_test[ i ] = float( n_act ) / float( N )
       print("max_per_sample = {}".format(max_per_sample))
       
       X      = X.reshape(-1,)
       X      = X.copy(order='C')
       R      = R.copy(order='C')
+      R_test = R_test.copy(order='C')
+      np.random.shuffle(R)
+      np.random.shuffle(R_test)
       r_do   = np.asarray( np.arange(0,1.0 + float(1. / float(N)), float(1. / float(N)) ) , dtype=np.float32)
       r_do[0]= eps
       r_do[N]= 1.0 - eps
@@ -868,17 +881,23 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          # -----------------------------------------------------------------------------
          # Polylogarithmic exponential case
          f_init    = float(B_PARAMS[0])
-         m_min     = int(B_PARAMS[1])
-         m_max     = int(B_PARAMS[2])
-         M_TERMS   = int(B_PARAMS[3])
-         eta       = float(B_PARAMS[4])
-         MAX_ITE   = int(B_PARAMS[5])
-         T         = int(B_PARAMS[6])
+         m_init    = int(B_PARAMS[1])
+         #m_min     = int(B_PARAMS[1])
+         #m_max     = int(B_PARAMS[2])
+         M_TERMS   = int(B_PARAMS[2])
+         eta       = float(B_PARAMS[3])
+         MAX_ITE   = int(B_PARAMS[4])
+         T         = int(B_PARAMS[5])
          
          # Fit the parameters of the polylogarithmic exp. distr. to the data
-         f,m       = f_nume.model_fit_polylogarithmic_r(  R, r_do, N,Ns,M_TERMS, eta, f_init,m_min,m_max, MAX_ITE,T )
+         f,m       = f_nume.model_fit_polylogarithmic_r(  R, r_do, N,Ns,M_TERMS, eta, f_init,m_init, MAX_ITE,T )
          # Compute analytic solution with found parameters
          f_gen.polylogarithmic_pdf( pdf_r, r_do, N+1, f, m, M_TERMS )
+         
+         # Compute average ML on test set for each model
+         AVG_ML_poly   = f_nume.avg_ml_poly_r( R_test, Ns_test, f, m, M_TERMS )
+         print("AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:")
+         print("        {} (Polylogarithmic)".format(AVG_ML_poly))
          
       elif DISTR_TYPE == 2:
          # -----------------------------------------------------------------------------
@@ -886,39 +905,45 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          f_init    = float(B_PARAMS[0])
          tau_init  = float(B_PARAMS[1])
          eta       = float(B_PARAMS[2])
-         eta_tau   = float(B_PARAMS[3])
+         #eta_tau   = float(B_PARAMS[3])
          MAX_ITE   = int(B_PARAMS[4])
          T         = int(B_PARAMS[5])
          
          # Fit the parameters of the shifted-geometric exp. distr. to the data
-         f,tau     = f_nume.model_fit_shifted_geom_r(  R, r_do, N,Ns, eta,eta_tau, f_init,tau_init, MAX_ITE,T )
+         f,tau     = f_nume.model_fit_shifted_geom_r(  R, r_do, N,Ns, eta, f_init,tau_init, MAX_ITE,T )
          # Compute analytic solution with found parameters
          f_gen.shifted_geometric_pdf( pdf_r, r_do, N+1, f, tau)
+         
+         # Compute average ML on test set for each model
+         AVG_ML_sg     = f_nume.avg_ml_sg_r( R_test, Ns_test, f2, tau )
+         print("AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:")
+         print("        {} (Shifted-geometric)".format(AVG_ML_sg))
          
       else :
          # -----------------------------------------------------------------------------
          # All distributions case for comparison
          
          f_init    = float(B_PARAMS[0])
-         m_min     = int(B_PARAMS[1])
-         m_max     = int(B_PARAMS[2])
-         tau_init  = float(B_PARAMS[3])
-         M_TERMS   = int(B_PARAMS[4])
-         eta       = float(B_PARAMS[5])
-         eta_tau   = float(B_PARAMS[6])
-         eta_f5    = float(B_PARAMS[7])
-         MAX_ITE   = int(B_PARAMS[8])
-         T         = int(B_PARAMS[9])
+         m_init    = int(B_PARAMS[1])
+         #m_min     = int(B_PARAMS[1])
+         #m_max     = int(B_PARAMS[2])
+         tau_init  = float(B_PARAMS[2])
+         M_TERMS   = int(B_PARAMS[3])
+         eta       = float(B_PARAMS[4])
+         #eta_tau   = float(B_PARAMS[5])
+         eta_f5    = float(B_PARAMS[5])
+         MAX_ITE   = int(B_PARAMS[6])
+         T         = int(B_PARAMS[7])
          
          # Fit the parameters of the polylogarithmic exp. distr. to the data
          # ---------------------------------------------------------------------
-         f,m       = f_nume.model_fit_polylogarithmic_r(  R, r_do, N,Ns,M_TERMS, eta, f_init,m_min,m_max, MAX_ITE,T )
+         f,m       = f_nume.model_fit_polylogarithmic_r(  R, r_do, N,Ns,M_TERMS, eta, f_init,m_init, MAX_ITE,T )
          # Compute analytic solution with found parameters
          f_gen.polylogarithmic_pdf( pdf_r, r_do, N+1, f, m, M_TERMS )
          
          # Fit the parameters of the shifted-geometric exp. distr. to the data
          # ---------------------------------------------------------------------
-         f2,tau    = f_nume.model_fit_shifted_geom_r(  R, r_do, N,Ns, eta,eta_tau, f_init,tau_init, MAX_ITE,T )
+         f2,tau    = f_nume.model_fit_shifted_geom_r(  R, r_do, N,Ns, eta, f_init,tau_init, MAX_ITE,T )
          # Compute analytic solution with found parameters
          pdf_r2    = np.zeros((N+1,),dtype=np.float32)
          pdf_r2    = pdf_r2.copy(order='C')
@@ -943,6 +968,16 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          pdf_r4    = pdf_r4.copy(order='C')
          f_gen.second_ord_pdf( pdf_r4, r_do, N+1, f4,f5 )
          
+         # Compute average ML on test set for each model
+         AVG_ML_poly   = f_nume.avg_ml_poly_r( R_test, Ns_test, f, m, M_TERMS )
+         AVG_ML_sg     = f_nume.avg_ml_sg_r( R_test, Ns_test, f2, tau )
+         AVG_ML_fo     = f_nume.avg_ml_fo_r( R_test, Ns_test, f3 )
+         AVG_ML_so     = f_nume.avg_ml_so_r( R_test, Ns_test, f4, f5 )
+         print("AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:")
+         print("        {} (Polylogarithmic)".format(AVG_ML_poly))
+         print("        {} (Shifted-geometric)".format(AVG_ML_sg))
+         print("        {} (First-order)".format(AVG_ML_fo))
+         print("        {} (Second-order)".format(AVG_ML_so))
       # Show plot with the histogram of the spiking data
       # --------------------------------------------------------------------------------
       if DISTR_TYPE == 3 :
@@ -951,27 +986,35 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          
          # Create histograms
          r_lim     = (max_per_sample+1.)/float(N)
-         hist_data, edges_data = np.histogram( R  , range=(0.0,1.0), bins=N_BINS, density=True )
+         hist_data = np.zeros((N_BINS,),dtype=np.float32)
+         for i in range(0,Ns):
+            ind    = int( float(R[i] + eps)*(N_BINS-1))
+            hist_data[ ind ] = hist_data[ ind ] + 1
          
+         hist_data = hist_data / np.sum( hist_data )
          i_min     = r_do.shape[0]
          if pdf_r.shape[0] < i_min :
             i_min= pdf_r.shape[0]
          # Plot histograms in log-scale
-         ax1.loglog( edges_data[:-1], hist_data, label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle=LINE_STYLES[0] )
-         ax1.loglog( r_do[:i_min], pdf_r[:i_min], label='Polylogarithmic', marker='o', color=COLOR_LIST[1%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1%size_lsty] )
-         ax1.loglog( r_do[:i_min], pdf_r2[:i_min], label='Shifted-geometric', marker='o', color=COLOR_LIST[2%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[2%size_lsty] )
-         ax1.loglog( r_do[:i_min], pdf_r3[:i_min], label='First-order', marker='o', color=COLOR_LIST[3%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[3%size_lsty] )
-         ax1.loglog( r_do[:i_min], pdf_r4[:i_min], label='Second-order', marker='o', color=COLOR_LIST[4%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[4%size_lsty] )
+         range_r   = np.asarray( np.arange(0,1.0 + float(1. / float(N_BINS-1)), float(1. / float(N_BINS-1)) ) , dtype=np.float32)
+         i_min2    = range_r.shape[0]
+         if hist_data.shape[0] < i_min2 :
+            i_min2 = hist_data.shape[0]
+         ax1.loglog( range_r[:i_min2], hist_data[:i_min2], label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle='None')
+         ax1.loglog( r_do[:i_min], pdf_r[:i_min]   / np.sum( pdf_r ), label='Polylogarithmic', marker='o', color=COLOR_LIST[1%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1%size_lsty] )
+         ax1.loglog( r_do[:i_min], pdf_r2[:i_min]  / np.sum( pdf_r2 ) , label='Shifted-geometric', marker='o', color=COLOR_LIST[2%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[2%size_lsty] )
+         ax1.loglog( r_do[:i_min], pdf_r3[:i_min]  / np.sum( pdf_r3 ) , label='First-order', marker='o', color=COLOR_LIST[3%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[3%size_lsty] )
+         ax1.loglog( r_do[:i_min], pdf_r4[:i_min]  / np.sum( pdf_r4 ) , label='Second-order', marker='o', color=COLOR_LIST[4%size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[4%size_lsty] )
          ax1.set_xlim(0, r_lim)
          ax1.set_xscale('linear')
          ax1.legend()
          
          # Plot histograms in linear scale
-         ax2.hist( R, range=(0,1.0), density=True, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2, label='Data histogram' )
-         ax2.plot( r_do[:i_min], pdf_r[:i_min], color=COLOR_LIST[1 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1 % size_lsty], label='Polylogarithmic' )
-         ax2.plot( r_do[:i_min], pdf_r2[:i_min], color=COLOR_LIST[2 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[2 % size_lsty], label='Shifted-geometric' )
-         ax2.plot( r_do[:i_min], pdf_r3[:i_min], color=COLOR_LIST[3 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[3 % size_lsty], label='First-order' )
-         ax2.plot( r_do[:i_min], pdf_r4[:i_min], color=COLOR_LIST[4 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[4 % size_lsty], label='Second-order' )
+         ax2.bar( range_r[:i_min2], hist_data[:i_min2], width=np.diff(range_r)[0], alpha=0.7, color=COLOR_LIST[0], edgecolor='black', label='Data histogram' )
+         ax2.plot( r_do[:i_min], pdf_r[:i_min]  / np.sum( pdf_r ) , color=COLOR_LIST[1 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1 % size_lsty], label='Polylogarithmic' )
+         ax2.plot( r_do[:i_min], pdf_r2[:i_min] / np.sum( pdf_r2 ), color=COLOR_LIST[2 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[2 % size_lsty], label='Shifted-geometric' )
+         ax2.plot( r_do[:i_min], pdf_r3[:i_min] / np.sum( pdf_r3 ), color=COLOR_LIST[3 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[3 % size_lsty], label='First-order' )
+         ax2.plot( r_do[:i_min], pdf_r4[:i_min] / np.sum( pdf_r4 ), color=COLOR_LIST[4 % size_cols], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[4 % size_lsty], label='Second-order' )
          ax2.set_xlim(0, r_lim)
          
          ax1.set_title('Models fit (log-scale), SG: $\\tau='+str(round(tau,2))+'$,$f='+str(round(f2,2))+'$, PL: $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
@@ -983,7 +1026,8 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          ax1.grid()
          
          ax2.set_xlabel('$r$ (population rate)',fontsize=18)
-         ax2.set_ylabel('Probability (normalized bin count)',fontsize=18)
+         ax2.set_ylabel('Normalized model probability',fontsize=18)
+         ax2.legend()
          ax2.grid()
          
          fig.savefig(OUT_FOLDER+'/MODEL_FIT_POLY_SHIFTGEOM_m'+str(m)+'_f'+str(round(f,2))+str_suffix+'_tau'+str(round(tau,2))+'_f'+str(round(f2,2))+'_'+file_n+'.png')
@@ -993,13 +1037,21 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          fig.subplots_adjust(wspace = 0.6, hspace = 0.6)
          
          # Create histograms
-         r_lim  = (max_per_sample+1.)/float(N)
-         hist_data, edges_data = np.histogram( R  , range=(0.0,1.0), bins=N_BINS, density=True )
+         r_lim     = (max_per_sample+1.)/float(N)
+         hist_data = np.zeros((N_BINS,),dtype=np.float32)
+         for i in range(0,Ns):
+            ind    = int( float(R[i] + eps)*(N_BINS-1))
+            hist_data[ ind ] = hist_data[ ind ] + 1
          
+         hist_data = hist_data / np.sum( hist_data )
          i_min     = r_do.shape[0]
          if pdf_r.shape[0] < i_min :
             i_min= pdf_r.shape[0]
          # Plot histograms in log-scale
+         range_r   = np.asarray( np.arange(0,1.0 + float(1. / float(N_BINS-1)), float(1. / float(N_BINS-1)) ) , dtype=np.float32)
+         i_min2    = range_r.shape[0]
+         if hist_data.shape[0] < i_min2 :
+            i_min2 = hist_data.shape[0]
          ax1.loglog( edges_data[:-1], hist_data, label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle=LINE_STYLES[0] )
          ax1.loglog( r_do[:i_min], pdf_r[:i_min], label='PDF model values', marker='o', color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1] )
          ax1.set_xlim(0, r_lim)
@@ -1007,8 +1059,9 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          ax1.legend()
          
          # Plot histograms in linear scale
-         ax2.hist( R, range=(0,1.0), density=True, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2, label='Data histogram' )
-         ax2.plot( r_do[:i_min], pdf_r[:i_min], color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1], label='Model probability' )
+         ax2.bar( range_r[:i_min2], hist_data[:i_min2], width=np.diff(range_r)[0], alpha=0.7, color=COLOR_LIST[0], edgecolor='black', label='Data histogram' )
+         #ax2.hist( R, range=(0,1.0), density=True, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2, label='Data histogram' )
+         ax2.plot( r_do[:i_min], pdf_r[:i_min] / np.sum(pdf_r) , color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1], label='Model probability' )
          
          if DISTR_TYPE == 1 :
             ax1.set_title('Polylogarithmic exp. distr. model fit (log-scale), $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
@@ -1023,7 +1076,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          ax1.grid()
          
          ax2.set_xlabel('$r$ (population rate)',fontsize=18)
-         ax2.set_ylabel('Probability (normalized bin count)',fontsize=18)
+         ax2.set_ylabel('Normalized model probability',fontsize=18)
          ax2.grid()
          
          if DISTR_TYPE == 1 :

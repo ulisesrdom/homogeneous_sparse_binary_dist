@@ -1,10 +1,11 @@
 import numpy as np
 import functions_sampling as f_samp
 import functions_generic as f_gen
+import functions_special as f_sp
 from libc.stdio cimport printf
 from cython.parallel import prange
 from cython import boundscheck, wraparound
-from libc.math cimport pow,sqrt,exp,log,fabs
+from libc.math cimport pow,sqrt,exp,log,fabs,M_PI
 
 cimport numpy as np
 cimport cython
@@ -220,6 +221,99 @@ def Q_polynomial( np.ndarray[float,ndim=1,mode="c"] Q,\
    
    return None
 
+def avg_ml_poly_r( np.ndarray[float,ndim=1,mode="c"] R, int Ns, float f, int m, int M ):
+   cdef:
+      int i,NPOINTS
+      double s,AVG_ML,Z,Lim,eps
+   eps           = 1e-15
+   NPOINTS       = 1000
+   AVG_ML        = 0.0
+   if m == 1 :
+      s          = 0.0
+      for i in range(0,Ns):
+         s       = s + ( -f * log( 1. + R[ i ] ) )
+      if f != 1. :
+         Z       = ( pow(2.,1.-f) - pow(1.,1.-f) ) / ( 1. - f )
+      else :
+         Z       = log( 2.0 )
+      s          = s / float(Ns)
+      AVG_ML     = s - log( Z )
+   else :
+      Z          = 0.
+      s          = 0.0
+      for i in range(0,Ns):
+         Lim     = 0
+         for j in range(1,M+1):
+            Lim  = Lim + ( pow( -R[ i], np.double(j) ) / pow( np.double(j), np.double(m) ) )
+         s       = s + ( f * Lim )
+      r_do       = np.asarray( np.arange(0,1.0 + float(1. / float(NPOINTS)), float(1. / float(NPOINTS)) ) , dtype=np.float32)
+      r_do[0]    = eps
+      r_do[NPOINTS]= 1.0 - eps
+      Z          = 0.0
+      for i in range(0,NPOINTS):
+         Lim     = 0
+         for j in range(1,M+1):
+            Lim  = Lim + ( pow( -r_do[ i], np.double(j) ) / pow( np.double(j), np.double(m) ) )
+         Z       = Z + exp( f * Lim )
+      Z          = Z * ( 1. / np.double(NPOINTS) ) # multiply by limiting dr for integration
+      s          = s / float(Ns)
+      AVG_ML     = s - log( Z )
+   return AVG_ML
+
+def avg_ml_sg_r( np.ndarray[float,ndim=1,mode="c"] R, int Ns, float f, float tau ):
+   cdef:
+      int i
+      double s,AVG_ML,Z,Ei_1,Ei_0,x_1
+   
+   AVG_ML     = 0.0
+   s          = 0.0
+   for i in range(0,Ns):
+      s       = s + ( f*( (1. / (1. + (tau * R[ i ]) )) - 1. ) )
+   
+   x_1        = f / (1. + (tau ))
+   Ei_1       = f_sp.Ei( x_1 )
+   Ei_0       = f_sp.Ei( f )
+   Z          = ((1. + tau) / tau)*exp( x_1 - f ) - ((f*exp(-f) / tau) * Ei_1)
+   Z          = Z - ( (1. / tau) - ((f*exp(-f) / tau) * Ei_0) )
+   s          = s / float(Ns)
+   #print("f={}, tau={}, s = {}, Z = {}, Ei0 = {}, Ei1 = {}".format(f,tau,s,Z,Ei_0,Ei_1))
+   AVG_ML     = s - log( Z )
+   return AVG_ML
+
+def avg_ml_fo_r( np.ndarray[float,ndim=1,mode="c"] R, int Ns, float f ):
+   cdef:
+      int i
+      double s,AVG_ML,Z
+   
+   AVG_ML     = 0.0
+   s          = 0.0
+   for i in range(0,Ns):
+      s       = s + ( -f* R[ i ] )
+   Z          = (1.0 - exp(-f)) / f
+   s          = s / float(Ns)
+   AVG_ML     = s - log( Z )
+   return AVG_ML
+
+def avg_ml_so_r( np.ndarray[float,ndim=1,mode="c"] R, int Ns, float f1, float f2 ):
+   cdef:
+      int i
+      double s1,s2,AVG_ML,Z,K,erfi_0,erfi_1
+   
+   AVG_ML     = 0.0
+   s1         = 0.0
+   for i in range(0,Ns):
+      s1      = s1 + ( -(f1 * R[ i ]) + (f2 * R[i] * R[i] )  )
+   
+   s2         = f1 / ( 2.0 * sqrt(f2) )
+   K          = ( sqrt( M_PI ) / (2.0 * sqrt(f2)) ) * exp( -(s2*s2) )
+   erfi_0     = f_sp.erfi( s2 )
+   erfi_1     = f_sp.erfi( s2 - sqrt(f2) )
+   Z          = K * ( erfi_0 - erfi_1 )
+   
+   s1         = s1 / float(Ns)
+   AVG_ML     = s1 - log( Z )
+   return AVG_ML
+
 # -----------------------------------------------------------------------------------------------
 # -----------------------------------------------------------------------------------------------
 # Function to fit the polylogarithmic exponential distr. model to a given dataset of population
@@ -236,32 +330,34 @@ def Q_polynomial( np.ndarray[float,ndim=1,mode="c"] Q,\
 #               for the case of m > 1. This value should be in [3,4,5,...,N].
 # ---eta      : float value with the learning rate for locally optimizing over the f parameter.
 # ---f_init   : float value with the initial value for the sparsity inducing parameter.
-# ---m_min    : integer value with the minimum value for the grid-search range of the integer
-#               order of the polylogarithmic function.
-# ---m_max    : integer value with the maximum value for the grid-search range of the integer
-#               order of the polylogarithmic function.
+# ---m_init   : integer value with the initial value for the integer order of the
+#               polylogarithmic function.
 # ---MAX_ITE  : integer value with the maximum number of optimization iterations.
 # ---T        : integer value with the maximum number of local optimization iterations.
 # Returns:
 # ---Pair of fitted parameters: f and m, where f is the sparsity inducing parameter and
 #    m is the integer order parameter of the polylogarithmic function.
+#def model_fit_polylogarithmic_r(  np.ndarray[float,ndim=1,mode="c"] R, \
+#                                  np.ndarray[float,ndim=1,mode="c"] r_dom, int N, int Ns, int M_TERMS,
+#                                  float eta, float f_init, int m_min, int m_max, int MAX_ITE, int T ):
 @boundscheck(False)
 @wraparound(False)
 def model_fit_polylogarithmic_r(  np.ndarray[float,ndim=1,mode="c"] R, \
                                   np.ndarray[float,ndim=1,mode="c"] r_dom, int N, int Ns, int M_TERMS,
-                                  float eta, float f_init, int m_min, int m_max, int MAX_ITE, int T ):
+                                  float eta, float f_init, int m_init, int MAX_ITE, int T ):
    cdef:
-      int ite,t,m,m_p,i
-      float f,s1,s2
+      int ite,t,m,i
+      float f,s1,s2,eps,conv_thresh
    cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
    cdef float[:] lZ_der_wrt_f     = np.zeros((N+1,),dtype=np.float32)
    #cdef float[:] pdf_r            = np.zeros((N+1,),dtype=np.float32)
    pdf_r                          = np.zeros((N+1,),dtype=np.float32)
    pdf_r                          = pdf_r.copy(order='C')
-   
+   eps                            = 0.00001
+   conv_thresh                    = 0.5
    # Initialize parameters
    f         = f_init
-   m         = m_min
+   m         = m_init
    # Iterative optimization
    for ite in range(1,MAX_ITE+1):
       # Locally optimize for the sparsity inducing parameter f given m
@@ -293,8 +389,14 @@ def model_fit_polylogarithmic_r(  np.ndarray[float,ndim=1,mode="c"] R, \
          for i in range(0,N+1):
            s2= s2 + ( pdf_r[ i ] * lZ_der_wrt_f[ i ])
          f   = f + (eta*(s1-s2))
-      
-      # Locally optimize (grid search) for the m polylogarithmic parameter given f
+         if np.abs( s1 - s2 ) <= conv_thresh :
+            print("   Small gradient reached")
+            ite = MAX_ITE
+            break
+         if f <= 0.0 :
+            f = eps #0.0
+      print("Last gradient magnitude = {}".format( np.abs( s1 - s2 ) ))
+      '''# Locally optimize (grid search) for the m polylogarithmic parameter given f
       # ---------------------------------------------------------------------------
       s2     = float('-inf')
       for m_p in range(m_min,m_max+1):
@@ -309,9 +411,11 @@ def model_fit_polylogarithmic_r(  np.ndarray[float,ndim=1,mode="c"] R, \
            s1= s1 + ll_batch[ i ]
          if s1 > s2 :
            s2= s1
-           m = m_p
+           m = m_p'''
       eta    = eta / (1.0 + (0.0001)*float(ite))
       print("model_fit_polylogarithmic_r:: iteration {}, f={}, m={}".format(ite,f,m))
+      if ite == MAX_ITE :
+         break
    return f,m
 
 # -----------------------------------------------------------------------------------------------
@@ -327,7 +431,6 @@ def model_fit_polylogarithmic_r(  np.ndarray[float,ndim=1,mode="c"] R, \
 # ---N        : integer value with the size of the neural population in each sample.
 # ---Ns       : integer value with the number of samples in the binary data.
 # ---eta      : float value with the learning rate for locally optimizing the f-parameter.
-# ---eta_tau  : float value with the learning rate for locally optimizing the tau-parameter.
 # ---f_init   : float value with the initial value for the sparsity inducing parameter.
 # ---tau_init : float value with the initial value for the shifted-geometric tau parameter.
 # ---MAX_ITE  : integer value with the maximum number of optimization iterations.
@@ -338,15 +441,17 @@ def model_fit_polylogarithmic_r(  np.ndarray[float,ndim=1,mode="c"] R, \
 @boundscheck(False)
 @wraparound(False)
 def model_fit_shifted_geom_r( np.ndarray[float,ndim=1,mode="c"] R, \
-                              np.ndarray[float,ndim=1,mode="c"] r_dom, int N, int Ns, float eta, float eta_tau,\
+                              np.ndarray[float,ndim=1,mode="c"] r_dom, int N, int Ns, float eta,\
                               float f_init, float tau_init, int MAX_ITE, int T ):
    cdef:
       int ite,t,i
-      float f,s1,s2,tau
+      float f,s1,s2,tau,eps,mag,conv_thresh
    cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
    cdef float[:] lZ_der_batch     = np.zeros((N+1,),dtype=np.float32)
    pdf_r                          = np.zeros((N+1,),dtype=np.float32)
    pdf_r                          = pdf_r.copy(order='C')
+   eps                            = 0.00001
+   conv_thresh                    = 0.5
    # Initialize parameters
    f         = f_init
    tau       = tau_init
@@ -382,12 +487,17 @@ def model_fit_shifted_geom_r( np.ndarray[float,ndim=1,mode="c"] R, \
            s2= s2 + ( pdf_r[ i ] * lZ_der_batch[ i ])
          
          f   = f + (eta*(s1-s2))
-         if f < 0.0 :
-            f = 0.0
-      
-      # Locally optimize for the tau shifted-geometric parameter given f
+         if np.abs( s1 - s2 ) <= conv_thresh :
+            print("   Small gradient reached")
+            ite = MAX_ITE
+            break
+         if f <= 0.0 :
+            f = eps #0.0
+      print("Last gradient magnitude = {}".format( np.abs( s1 - s2 ) ))
+      '''# Locally optimize for the tau shifted-geometric parameter given f
       # ---------------------------------------------------------------------------
-      for t in range(1,T+1):
+      if eta_tau > 0.0 :
+       for t in range(1,T+1):
          for i in range(0,Ns):
             ll_batch[i]     = 0.0
          for i in range(0,N+1):
@@ -413,14 +523,22 @@ def model_fit_shifted_geom_r( np.ndarray[float,ndim=1,mode="c"] R, \
          s2  = 0.0
          for i in range(0,N+1):
            s2= s2 + ( pdf_r[ i ] * lZ_der_batch[ i ] )
-         tau = tau + (eta_tau*(s1-s2))
-         if tau < 0 :
-            tau = 0.
+         #tau = tau + (eta_tau*(s1-s2))
+         mag = np.abs( s1 - s2 )
+         tau = tau + (eta_tau*(s1-s2) / mag )   # normalized gradient descent
+         if mag <= 0.1 :
+            print("   Small gradient reached")
+            break
+         if tau <= 0 :
+            tau = eps #0.
          if tau > 1.0 :
-            tau = 1.0
+            tau = 1.0'''
       eta    = eta / (1.0 + (0.0001)*float(ite))
-      eta_tau= eta_tau / (1.0 + (0.0001)*float(ite))
+      #eta_tau= eta_tau / (1.0 + (0.0001)*float(ite))
+      #print("Last gradient magnitude = {}".format( np.abs( s1 - s2 ) ))
       print("model_fit_shifted_geom_r:: iteration {}, f={}, tau={}".format(ite,f,tau))
+      if ite == MAX_ITE :
+         break
    return f,tau
 
 # -----------------------------------------------------------------------------------------------
@@ -448,12 +566,13 @@ def model_fit_first_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
                            float eta, float f_init, int MAX_ITE, int T ):
    cdef:
       int ite,t,i
-      float f,s1,s2
+      float f,s1,s2,eps,conv_thresh
    cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
    cdef float[:] lZ_der_batch     = np.zeros((N+1,),dtype=np.float32)
    pdf_r                          = np.zeros((N+1,),dtype=np.float32)
    pdf_r                          = pdf_r.copy(order='C')
-   
+   eps                            = 0.00001
+   conv_thresh                    = 0.5
    # Initialize parameters
    f         = f_init
    # Iterative optimization
@@ -488,11 +607,17 @@ def model_fit_first_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
            s2= s2 + ( pdf_r[ i ] * lZ_der_batch[ i ])
          
          f   = f + (eta*(s1-s2))
-         if f < 0.0 :
-            f = 0.0
-      
+         if np.abs( s1 - s2 ) <= conv_thresh :
+            print("   Small gradient reached")
+            ite = MAX_ITE
+            break
+         if f <= 0.0 :
+            f = eps #0.0
+      print("Last gradient magnitude = {}".format( np.abs( s1 - s2 ) ))
       eta    = eta / (1.0 + (0.0001)*float(ite))
       print("model_fit_first_ord_r:: iteration {}, f={}".format(ite,f))
+      if ite == MAX_ITE :
+         break
    return f
 
 # -----------------------------------------------------------------------------------------------
@@ -520,18 +645,20 @@ def model_fit_second_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
                            np.ndarray[float,ndim=1,mode="c"] r_dom, int N, int Ns, \
                            float eta1, float eta2, float f_init, int MAX_ITE, int T ):
    cdef:
-      int ite,t,i
-      float f1,f2,s1,s2
+      int ite,t,i,converged_f1
+      float f1,f2,s1,s2,eps,conv_thresh
    cdef float[:] ll_batch         = np.zeros((Ns,),dtype=np.float32)
    cdef float[:] lZ_der_batch     = np.zeros((N+1,),dtype=np.float32)
    pdf_r                          = np.zeros((N+1,),dtype=np.float32)
    pdf_r                          = pdf_r.copy(order='C')
-   
+   eps                            = 0.00001
+   conv_thresh                    = 0.5
    # Initialize parameters
    f1        = f_init
    f2        = f_init
    # Iterative optimization
    for ite in range(1,MAX_ITE+1):
+      converged_f1 = 0
       # Locally optimize for the sparsity inducing parameter f1
       # ---------------------------------------------------------------------------
       for t in range(1,T+1):
@@ -562,9 +689,13 @@ def model_fit_second_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
            s2= s2 + ( pdf_r[ i ] * lZ_der_batch[ i ])
          
          f1  = f1 + (eta1*(s1-s2))
-         if f1 < 0.0 :
-            f1 = 0.0
-      
+         if np.abs( s1 - s2 ) <= conv_thresh :
+            print("   Small gradient reached")
+            converged_f1 = 1
+            break
+         if f1 <= 0.0 :
+            f1 = eps #0.0
+      print("Last gradient magnitude = {}".format( np.abs( s1 - s2 ) ))
       # Locally optimize for the second-order parameter f2
       # ---------------------------------------------------------------------------
       for t in range(1,T+1):
@@ -594,11 +725,19 @@ def model_fit_second_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
          for i in range(0,N+1):
            s2= s2 + ( pdf_r[ i ] * lZ_der_batch[ i ] )
          f2  = f2 + (eta2*(s1-s2))
-         if f2 < 0 :
-            f2 = 0.
+         if np.abs( s1 - s2 ) <= conv_thresh :
+            print("   Small gradient reached")
+            if converged_f1 == 1 :
+               ite = MAX_ITE
+            break
+         if f2 <= 0 :
+            f2 = eps #0.
       eta1   = eta1 / (1.0 + (0.0001)*float(ite))
       eta2   = eta2 / (1.0 + (0.0001)*float(ite))
+      print("Last gradient magnitude = {}".format( np.abs( s1 - s2 ) ))
       print("model_fit_second_ord_r:: iteration {}, f1={}, f2={}".format(ite,f1,f2))
+      if ite == MAX_ITE :
+         break
    return f1,f2
 
 # -----------------------------------------------------------------------------------------------
@@ -612,7 +751,8 @@ def model_fit_second_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
 cdef extern from "c/c_functions_numerical.h" nogil:
    
    void c_der_ll_poly_r_wrt_f_part( int i, float *ll_batch, int M_terms, int m, float *R )
-   void c_log_likelihood_poly_r_part_i( int i, float *R, float *ll_batch, int M_terms, float f, float m )
+   void c_log_likelihood_poly_r_part_i( int i, float *R, float *ll_batch, int M_terms, float f, int m )
+   void c_log_likelihood_sg_r_part_i( int i, float *R, float *ll_batch, float f, float tau )
    void c_der_ll_sg_r_wrt_f_part( int i, float *ll_batch, float tau, float *R )
    void c_der_ll_sg_r_wrt_tau_part( int i, float *ll_batch, float f, float tau, float *R )
    void c_der_ll_first_o_r_wrt_f_part( int i, float *ll_batch, float *R )

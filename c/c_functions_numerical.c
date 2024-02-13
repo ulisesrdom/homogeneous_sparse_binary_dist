@@ -53,7 +53,7 @@ void c_der_ll_poly_r_wrt_f_part( int i, float *ll_batch, int M_terms, int m, flo
 // Outputs:
 //    void    (no return value).
 // -----------------------------------------------------------------------------------------------
-void c_log_likelihood_poly_r_part_i( int i, float *R, float *ll_batch, int M_terms, float f, float m ){
+void c_log_likelihood_poly_r_part_i( int i, float *R, float *ll_batch, int M_terms, float f, int m ){
    int k;
    float s;
    s           = 0.0 ;
@@ -65,6 +65,26 @@ void c_log_likelihood_poly_r_part_i( int i, float *R, float *ll_batch, int M_ter
       }
    }
    ll_batch[ i ] = f*s ;
+}
+// -----------------------------------------------------------------------------------------------
+// Compute the log-likelihood partial function value (where the normalization function values are
+// ommitted) for a single population rate sample i for the shifted-geometric exp. distr and store
+// it in its corresponding cell position in a batch vector.
+// Inputs :
+//    i       (integer value with the index in 0 to Ns-1 that identifies a sample in R, where 
+//             Ns is the number of samples).
+//    R       (pointer to float array where each pop. rate sample is stored; R[ i ]
+//             stores the number of active neurons divided by N (the population size) for the
+//             i-th sample).
+//    ll_batch (pointer to float array where the results of the function are to be stored for
+//            each sample).
+//    f       (float value with the sparsity-inducing parameter).
+//    tau     (float value for the shifted-geometric function).
+// Outputs:
+//    void    (no return value).
+// -----------------------------------------------------------------------------------------------
+void c_log_likelihood_sg_r_part_i( int i, float *R, float *ll_batch, float f, float tau ){
+   ll_batch[ i ] = f*( (1.0 / (1.0 + tau*R[i])) - 1.0 ) ;
 }
 
 // -----------------------------------------------------------------------------------------------
