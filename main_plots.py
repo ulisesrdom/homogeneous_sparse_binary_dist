@@ -895,9 +895,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          f_gen.polylogarithmic_pdf( pdf_r, r_do, N+1, f, m, M_TERMS )
          
          # Compute average ML on test set for each model
-         AVG_ML_poly   = f_nume.avg_ml_poly_r( R_test, Ns_test, f, m, M_TERMS )
-         print("AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:")
-         print("        {} (Polylogarithmic)".format(AVG_ML_poly))
+         AVG_ML    = f_nume.avg_ml_poly_r( R_test, Ns_test, f, m, M_TERMS )
          
       elif DISTR_TYPE == 2:
          # -----------------------------------------------------------------------------
@@ -914,9 +912,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          f_gen.shifted_geometric_pdf( pdf_r, r_do, N+1, f, tau)
          
          # Compute average ML on test set for each model
-         AVG_ML_sg = f_nume.avg_ml_sg_r( R_test, Ns_test, f, tau )
-         print("AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:")
-         print("        {} (Shifted-geometric)".format(AVG_ML_sg))
+         AVG_ML    = f_nume.avg_ml_sg_r( R_test, Ns_test, f, tau )
          
       elif DISTR_TYPE == 3:
          # -----------------------------------------------------------------------------
@@ -933,9 +929,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          f_gen.first_ord_pdf( pdf_r, r_do, N+1, f )
          
          # Compute average ML on test set for each model
-         AVG_ML_fo = f_nume.avg_ml_fo_r( R_test, Ns_test, f )
-         print("AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:")
-         print("        {} (First-order)".format(AVG_ML_fo))
+         AVG_ML    = f_nume.avg_ml_fo_r( R_test, Ns_test, f )
          
       elif DISTR_TYPE == 4:
          # -----------------------------------------------------------------------------
@@ -954,9 +948,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          f_gen.second_ord_pdf( pdf_r, r_do, N+1, f1,f2 )
          
          # Compute average ML on test set for each model
-         AVG_ML_so = f_nume.avg_ml_so_r( R_test, Ns_test, f1, f2 )
-         print("AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:")
-         print("        {} (Second-order)".format(AVG_ML_so))
+         AVG_ML    = f_nume.avg_ml_so_r( R_test, Ns_test, f1, f2 )
          
       else :
          # -----------------------------------------------------------------------------
@@ -1009,11 +1001,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          AVG_ML_sg     = f_nume.avg_ml_sg_r( R_test, Ns_test, f2, tau )
          AVG_ML_fo     = f_nume.avg_ml_fo_r( R_test, Ns_test, f3 )
          AVG_ML_so     = f_nume.avg_ml_so_r( R_test, Ns_test, f4, f5 )
-         print("AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:")
-         print("        {} (Polylogarithmic)".format(AVG_ML_poly))
-         print("        {} (Shifted-geometric)".format(AVG_ML_sg))
-         print("        {} (First-order)".format(AVG_ML_fo))
-         print("        {} (Second-order)".format(AVG_ML_so))
+         
       # Show plot with the histogram of the spiking data
       # --------------------------------------------------------------------------------
       if DISTR_TYPE == 5 :
@@ -1065,6 +1053,17 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          ax2.set_ylabel('Normalized model probability',fontsize=18)
          ax2.legend()
          ax2.grid()
+         
+         # Write average marginal likelihood on test set results on output file
+         output_txt_file = OUT_FOLDER+'/MODEL_FIT_POLY_SHIFTGEOM_m'+str(m)+'_f'+str(round(f,2))+str_suffix+'_tau'+str(round(tau,2))+'_f'+str(round(f2,2))+'_'+file_n+'.txt'
+         txt_content     = "AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:\n"
+         txt_content     = txt_content + "        "+str(AVG_ML_poly)+" (Polylogarithmic)\n"
+         txt_content     = txt_content + "        "+str(AVG_ML_sg)+" (Shifted-geometric)\n"
+         txt_content     = txt_content + "        "+str(AVG_ML_fo)+" (First-order)\n"
+         txt_content     = txt_content + "        "+str(AVG_ML_so)+" (Second-order)"
+         # Write content to the output file
+         with open(output_txt_file, 'w') as file:
+            file.write(txt_content)
          
          fig.savefig(OUT_FOLDER+'/MODEL_FIT_POLY_SHIFTGEOM_m'+str(m)+'_f'+str(round(f,2))+str_suffix+'_tau'+str(round(tau,2))+'_f'+str(round(f2,2))+'_'+file_n+'.png')
          
@@ -1121,12 +1120,23 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          ax2.grid()
          
          if DISTR_TYPE == 1 :
+            output_txt_file = OUT_FOLDER+'/MODEL_FIT_POLYLOGARITHM_m'+str(m)+'_f'+str(round(f,2))+str_suffix+'_'+file_n+'.txt'
             fig.savefig(OUT_FOLDER+'/MODEL_FIT_POLYLOGARITHM_m'+str(m)+'_f'+str(round(f,2))+str_suffix+'_'+file_n+'.png')
          elif DISTR_TYPE == 2 :
+            output_txt_file = OUT_FOLDER+'/MODEL_FIT_SHIFTED_GEOMETRIC_tau'+str(round(tau,2))+'_f'+str(round(f,2))+str_suffix+'_'+file_n+'.txt'
             fig.savefig(OUT_FOLDER+'/MODEL_FIT_SHIFTED_GEOMETRIC_tau'+str(round(tau,2))+'_f'+str(round(f,2))+str_suffix+'_'+file_n+'.png')
          elif DISTR_TYPE == 3 :
+            output_txt_file = OUT_FOLDER+'/MODEL_FIT_INDEPENDENT_f'+str(round(f,2))+str_suffix+'_'+file_n+'.txt'
             fig.savefig(OUT_FOLDER+'/MODEL_FIT_INDEPENDENT_f'+str(round(f,2))+str_suffix+'_'+file_n+'.png')
          else :
+            output_txt_file = OUT_FOLDER+'/MODEL_FIT_SECOND_ORDER_f1'+str(round(f1,2))+'_f2'+str(round(f2,2))+str_suffix+'_'+file_n+'.txt'
             fig.savefig(OUT_FOLDER+'/MODEL_FIT_SECOND_ORDER_f1'+str(round(f1,2))+'_f2'+str(round(f2,2))+str_suffix+'_'+file_n+'.png')
+         
+         txt_content     = "AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:\n"
+         txt_content     = txt_content + "        "+str(AVG_ML)
+         # Write average marginal likelihood on test set results on output file
+         # Write content to the output file
+         with open(output_txt_file, 'w') as file:
+            file.write(txt_content)
    
    return None
