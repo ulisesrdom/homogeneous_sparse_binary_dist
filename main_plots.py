@@ -784,25 +784,27 @@ def plot_histogram( SAMPLING_TYPE, DISTR_TYPE, N_SAMP,N_BINS,N, BASE_PARAMS,\
 # Parameters:
 # ---DISTR_TYPE: integer value to select a distribution to sample from. The options are:
 #                polylogarithmic exponential (1); shifted-geometric exponential (2);
-#                polylogarithmic and shifted-geometric exp. vs 1st and 2nd order models for comparison (3).
+#                independent exponential (3); second-order exponential (4); all models comparison (5).
 # ---N_SAMP    : integer value with the number of samples to draw for each distribution.
 # ---N_BINS    : integer value with the number of bins for each histogram.
 # ---BASE_PARAMS: string with comma separated baseline parameter values for each
-#                distribution. For DISTR_TYPE=1 the format is 'f_init,m_min,m_max,M_TERMS,eta,MAX_ITE,T',
+#                distribution. For DISTR_TYPE=1 the format is 'f_init,m,M_TERMS,eta,MAX_ITE,T',
 #                where f_init>0 is the initial value of the sparsity inducing parameter and the integers
-#                m_min and m_max denote the lower and upper bound for the polylogarithmic m order parameter
-#                grid-search, M_TERMS is the number of terms to use for the case of the m>1 approximation,
-#                eta is the learning rate for the f parameter, MAX_ITE is the maximum number of global
-#                optimization iterations and T is the number of local optimization iterations.
-#                For DISTR_TYPE=2 the format is 'f_init,tau_init,eta,eta_tau,MAX_ITE,T', where f_init>0 is
-#                the initial value of the sparsity inducing parameter, tau_init is the initial value of the
-#                tau parameter, eta is the learning rate for the f parameter, eta_tau is the learning rate
-#                for the tau parameter, MAX_ITE is the maximum number of global optimization iterations and
-#                T is the number of local optimization iterations.
-#                For DISTR_TYPE=3 the format is 'f_init,m_min,m_max,tau_init,M_TERMS,eta,eta_tau,eta_f5,
-#                MAX_ITE,T' where the parameter names are the same as in the previous two cases with the
-#                addition of eta_f5 for the learning rate of the second parameter in the second-order
-#                interactions exp. distr.
+#                m is the polylogarithmic order parameter, M_TERMS is the number of terms to use for the
+#                case of the m>1 approximation, eta is the learning rate for the f parameter, MAX_ITE is
+#                the maximum number of global optimization iterations and T is the number of local
+#                optimization iterations.
+#                For DISTR_TYPE=2 the format is 'f_init,tau,eta,MAX_ITE,T', where f_init>0 is
+#                the initial value of the sparsity inducing parameter, tau is the shifted-geometric 
+#                parameter, eta is the learning rate for the f parameter, MAX_ITE is the maximum number
+#                of global optimization iterations and T is the number of local optimization iterations.
+#                For DISTR_TYPE=3 the format is 'f_init,eta,MAX_ITE,T', where the parameter names are the
+#                same as in the previous two cases.
+#                For DISTR_TYPE=4 the format is 'f_init,eta1,eta2,MAX_ITE,T', where the parameter names
+#                are the same as in the previous two cases but f_init is now used to initialize both the
+#                f_1 and the f_2 parameters of the second-order model.
+#                For DISTR_TYPE=5 the format is 'f_init,m,tau,M_TERMS,eta1,eta2,MAX_ITE,T' where the
+#                parameter names are described from among the previous cases.
 # ---IN_FILES:   list of pickle file names for the binary spiking data.
 # ---IN_FOLDER:  string value with the input folder, where the spiking data pickle files
 #                are located.
@@ -881,16 +883,14 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          # -----------------------------------------------------------------------------
          # Polylogarithmic exponential case
          f_init    = float(B_PARAMS[0])
-         m_init    = int(B_PARAMS[1])
-         #m_min     = int(B_PARAMS[1])
-         #m_max     = int(B_PARAMS[2])
+         m         = int(B_PARAMS[1])
          M_TERMS   = int(B_PARAMS[2])
          eta       = float(B_PARAMS[3])
          MAX_ITE   = int(B_PARAMS[4])
          T         = int(B_PARAMS[5])
          
          # Fit the parameters of the polylogarithmic exp. distr. to the data
-         f,m       = f_nume.model_fit_polylogarithmic_r(  R, r_do, N,Ns,M_TERMS, eta, f_init,m_init, MAX_ITE,T )
+         f         = f_nume.model_fit_polylogarithmic_r(  R, r_do, N,Ns,M_TERMS, eta, f_init,m, MAX_ITE,T )
          # Compute analytic solution with found parameters
          f_gen.polylogarithmic_pdf( pdf_r, r_do, N+1, f, m, M_TERMS )
          
@@ -903,47 +903,83 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          # -----------------------------------------------------------------------------
          # Shifted-geometric exponential case
          f_init    = float(B_PARAMS[0])
-         tau_init  = float(B_PARAMS[1])
+         tau       = float(B_PARAMS[1])
          eta       = float(B_PARAMS[2])
-         #eta_tau   = float(B_PARAMS[3])
-         MAX_ITE   = int(B_PARAMS[4])
-         T         = int(B_PARAMS[5])
+         MAX_ITE   = int(B_PARAMS[3])
+         T         = int(B_PARAMS[4])
          
          # Fit the parameters of the shifted-geometric exp. distr. to the data
-         f,tau     = f_nume.model_fit_shifted_geom_r(  R, r_do, N,Ns, eta, f_init,tau_init, MAX_ITE,T )
+         f         = f_nume.model_fit_shifted_geom_r(  R, r_do, N,Ns, eta, f_init,tau, MAX_ITE,T )
          # Compute analytic solution with found parameters
          f_gen.shifted_geometric_pdf( pdf_r, r_do, N+1, f, tau)
          
          # Compute average ML on test set for each model
-         AVG_ML_sg     = f_nume.avg_ml_sg_r( R_test, Ns_test, f2, tau )
+         AVG_ML_sg = f_nume.avg_ml_sg_r( R_test, Ns_test, f, tau )
          print("AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:")
          print("        {} (Shifted-geometric)".format(AVG_ML_sg))
+         
+      elif DISTR_TYPE == 3:
+         # -----------------------------------------------------------------------------
+         # Independent exponential case
+         f_init    = float(B_PARAMS[0])
+         eta       = float(B_PARAMS[1])
+         MAX_ITE   = int(B_PARAMS[2])
+         T         = int(B_PARAMS[3])
+         # Fit the parameter of the 1st order interactions exp. distr.
+         # (truncated exp. distr.) to the data
+         # ---------------------------------------------------------------------
+         f         = f_nume.model_fit_first_ord_r(  R, r_do, N,Ns, eta, f_init, MAX_ITE,T )
+         # Compute analytic solution with found parameters
+         f_gen.first_ord_pdf( pdf_r, r_do, N+1, f )
+         
+         # Compute average ML on test set for each model
+         AVG_ML_fo = f_nume.avg_ml_fo_r( R_test, Ns_test, f )
+         print("AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:")
+         print("        {} (First-order)".format(AVG_ML_fo))
+         
+      elif DISTR_TYPE == 4:
+         # -----------------------------------------------------------------------------
+         # Second-order exponential case
+         f_init    = float(B_PARAMS[0])
+         eta1      = float(B_PARAMS[1])
+         eta2      = float(B_PARAMS[2])
+         MAX_ITE   = int(B_PARAMS[3])
+         T         = int(B_PARAMS[4])
+         # Fit the parameter of the 2nd order interactions exp. distr. to the
+         # data
+         # ---------------------------------------------------------------------
+         f1, f2    = f_nume.model_fit_second_ord_r(  R, r_do, N,Ns, eta1, eta2, f_init, MAX_ITE,T )
+         
+         # Compute analytic solution with found parameters
+         f_gen.second_ord_pdf( pdf_r, r_do, N+1, f1,f2 )
+         
+         # Compute average ML on test set for each model
+         AVG_ML_so = f_nume.avg_ml_so_r( R_test, Ns_test, f1, f2 )
+         print("AVERAGE MARGINAL LIKELIHOOD FOR TESTING SET:")
+         print("        {} (Second-order)".format(AVG_ML_so))
          
       else :
          # -----------------------------------------------------------------------------
          # All distributions case for comparison
          
          f_init    = float(B_PARAMS[0])
-         m_init    = int(B_PARAMS[1])
-         #m_min     = int(B_PARAMS[1])
-         #m_max     = int(B_PARAMS[2])
-         tau_init  = float(B_PARAMS[2])
+         m         = int(B_PARAMS[1])
+         tau       = float(B_PARAMS[2])
          M_TERMS   = int(B_PARAMS[3])
-         eta       = float(B_PARAMS[4])
-         #eta_tau   = float(B_PARAMS[5])
-         eta_f5    = float(B_PARAMS[5])
+         eta1      = float(B_PARAMS[4])
+         eta2      = float(B_PARAMS[5])
          MAX_ITE   = int(B_PARAMS[6])
          T         = int(B_PARAMS[7])
          
          # Fit the parameters of the polylogarithmic exp. distr. to the data
          # ---------------------------------------------------------------------
-         f,m       = f_nume.model_fit_polylogarithmic_r(  R, r_do, N,Ns,M_TERMS, eta, f_init,m_init, MAX_ITE,T )
+         f         = f_nume.model_fit_polylogarithmic_r(  R, r_do, N,Ns,M_TERMS, eta1, f_init,m, MAX_ITE,T )
          # Compute analytic solution with found parameters
          f_gen.polylogarithmic_pdf( pdf_r, r_do, N+1, f, m, M_TERMS )
          
          # Fit the parameters of the shifted-geometric exp. distr. to the data
          # ---------------------------------------------------------------------
-         f2,tau    = f_nume.model_fit_shifted_geom_r(  R, r_do, N,Ns, eta, f_init,tau_init, MAX_ITE,T )
+         f2        = f_nume.model_fit_shifted_geom_r(  R, r_do, N,Ns, eta1, f_init,tau, MAX_ITE,T )
          # Compute analytic solution with found parameters
          pdf_r2    = np.zeros((N+1,),dtype=np.float32)
          pdf_r2    = pdf_r2.copy(order='C')
@@ -952,7 +988,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          # Fit the parameter of the 1st order interactions exp. distr.
          # (truncated exp. distr.) to the data
          # ---------------------------------------------------------------------
-         f3        = f_nume.model_fit_first_ord_r(  R, r_do, N,Ns, eta, f_init, MAX_ITE,T )
+         f3        = f_nume.model_fit_first_ord_r(  R, r_do, N,Ns, eta1, f_init, MAX_ITE,T )
          # Compute analytic solution with found parameters
          pdf_r3    = np.zeros((N+1,),dtype=np.float32)
          pdf_r3    = pdf_r3.copy(order='C')
@@ -961,7 +997,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          # Fit the parameter of the 2nd order interactions exp. distr. to the
          # data
          # ---------------------------------------------------------------------
-         f4, f5    = f_nume.model_fit_second_ord_r(  R, r_do, N,Ns, eta, eta_f5, f_init, MAX_ITE,T )
+         f4, f5    = f_nume.model_fit_second_ord_r(  R, r_do, N,Ns, eta1, eta2, f_init, MAX_ITE,T )
          
          # Compute analytic solution with found parameters
          pdf_r4    = np.zeros((N+1,),dtype=np.float32)
@@ -980,7 +1016,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          print("        {} (Second-order)".format(AVG_ML_so))
       # Show plot with the histogram of the spiking data
       # --------------------------------------------------------------------------------
-      if DISTR_TYPE == 3 :
+      if DISTR_TYPE == 5 :
          fig, (ax1, ax2) = plt.subplots( nrows=1, ncols=2, figsize=(20, 6), dpi=DPI )
          fig.subplots_adjust(wspace = 0.6, hspace = 0.6)
          
@@ -1052,7 +1088,7 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          i_min2    = range_r.shape[0]
          if hist_data.shape[0] < i_min2 :
             i_min2 = hist_data.shape[0]
-         ax1.loglog( edges_data[:-1], hist_data, label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle=LINE_STYLES[0] )
+         ax1.loglog( range_r[:i_min2], hist_data[:i_min2], label='Data points', marker='o', color=COLOR_LIST[0], alpha=0.7, linestyle='None' )
          ax1.loglog( r_do[:i_min], pdf_r[:i_min], label='PDF model values', marker='o', color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1] )
          ax1.set_xlim(0, r_lim)
          ax1.set_xscale('linear')
@@ -1060,15 +1096,20 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          
          # Plot histograms in linear scale
          ax2.bar( range_r[:i_min2], hist_data[:i_min2], width=np.diff(range_r)[0], alpha=0.7, color=COLOR_LIST[0], edgecolor='black', label='Data histogram' )
-         #ax2.hist( R, range=(0,1.0), density=True, bins=N_BINS, histtype='bar', color=COLOR_LIST[0], alpha=0.7, edgecolor='black', linewidth=1.2, label='Data histogram' )
          ax2.plot( r_do[:i_min], pdf_r[:i_min] / np.sum(pdf_r) , color=COLOR_LIST[1], alpha=0.7, linewidth=3.0, linestyle=LINE_STYLES[1], label='Model probability' )
          
          if DISTR_TYPE == 1 :
             ax1.set_title('Polylogarithmic exp. distr. model fit (log-scale), $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
             ax2.set_title('Polylogarithmic exp. distr. model fit, $m='+str(m)+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
-         else :
+         elif DISTR_TYPE == 2 :
             ax1.set_title('Shifted-geometric exp. distr. model fit (log-scale), $\\tau='+str(round(tau,2))+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
             ax2.set_title('Shifted-geometric exp. distr. model fit, $\\tau='+str(round(tau,2))+'$,$f='+str(round(f,2))+'$',fontsize=20,pad=20)
+         elif DISTR_TYPE == 3 :
+            ax1.set_title('Independent exp. distr. model fit (log-scale), $f='+str(round(f,2))+'$',fontsize=20,pad=20)
+            ax2.set_title('Independent exp. distr. model fit, $f='+str(round(f,2))+'$',fontsize=20,pad=20)
+         else :
+            ax1.set_title('Second-order exp. distr. model fit (log-scale), $f1='+str(round(f1,2))+'$,$f2='+str(round(f2,2))+'$',fontsize=20,pad=20)
+            ax2.set_title('Second-order exp. distr. model fit, $f1='+str(round(f1,2))+'$,$f2='+str(round(f2,2))+'$',fontsize=20,pad=20)
          
          str_suffix = '_POP_RATE'
          ax1.set_xlabel('$r$ (population rate)',fontsize=18)
@@ -1081,7 +1122,11 @@ def plot_model_fit( DISTR_TYPE, N_SAMP,N_BINS, BASE_PARAMS, IN_FOLDER, IN_FILES,
          
          if DISTR_TYPE == 1 :
             fig.savefig(OUT_FOLDER+'/MODEL_FIT_POLYLOGARITHM_m'+str(m)+'_f'+str(round(f,2))+str_suffix+'_'+file_n+'.png')
-         else :
+         elif DISTR_TYPE == 2 :
             fig.savefig(OUT_FOLDER+'/MODEL_FIT_SHIFTED_GEOMETRIC_tau'+str(round(tau,2))+'_f'+str(round(f,2))+str_suffix+'_'+file_n+'.png')
+         elif DISTR_TYPE == 3 :
+            fig.savefig(OUT_FOLDER+'/MODEL_FIT_INDEPENDENT_f'+str(round(f,2))+str_suffix+'_'+file_n+'.png')
+         else :
+            fig.savefig(OUT_FOLDER+'/MODEL_FIT_SECOND_ORDER_f1'+str(round(f1,2))+'_f2'+str(round(f2,2))+str_suffix+'_'+file_n+'.png')
    
    return None
