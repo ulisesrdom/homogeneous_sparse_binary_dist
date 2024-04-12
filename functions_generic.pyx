@@ -1,5 +1,6 @@
 import numpy as np
 import functions_special as f_sp
+from scipy import special as sp
 from libc.stdio cimport printf
 from cython import boundscheck, wraparound
 from libc.math cimport pow,sqrt,exp,log,fabs,M_PI
@@ -76,8 +77,10 @@ def shifted_geometric_pdf( np.ndarray[float,ndim=1,mode="c"] p,\
       p[ pi ] = exp( f*( (1. / (1. + (tau * r[ pi ]) )) - 1. ) )
    
    x_1        = f / (1. + (tau ))
-   Ei_1       = f_sp.Ei( x_1 )
-   Ei_0       = f_sp.Ei( f )
+   #Ei_1       = f_sp.Ei( x_1 )
+   #Ei_0       = f_sp.Ei( f )
+   Ei_1       = sp.expi( x_1 )
+   Ei_0       = sp.expi( f )
    
    Z          = ((1. + tau) / tau)*exp( x_1 - f ) - ((f*exp(-f) / tau) * Ei_1)
    Z          = Z - ( (1. / tau) - ((f*exp(-f) / tau) * Ei_0) )
@@ -131,23 +134,43 @@ def first_ord_pdf( np.ndarray[float,ndim=1,mode="c"] p,\
 def second_ord_pdf( np.ndarray[float,ndim=1,mode="c"] p,\
                     np.ndarray[float,ndim=1,mode="c"] r, int npoints, float f1, float f2 ):
    cdef:
-      int pi
-      double Z,erfi_0,erfi_1,K,s
+      int pi,N
+      double Z,er_0,er_1,K,s,dr,eps
    for pi in range(0,npoints):
-      p[ pi ] = exp( -(f1 * r[ pi ]) + (f2 * r[pi] * r[pi] )  )
+      p[ pi ] = exp( (f1 * r[ pi ]) + (f2 * r[pi] * r[pi] )  )
    
-   s          = f1 / ( 2.0 * sqrt(f2) )
-   K          = ( sqrt( M_PI ) / (2.0 * sqrt(f2)) ) * exp( -(s*s) )
-   erfi_0     = f_sp.erfi( s )
-   erfi_1     = f_sp.erfi( s - sqrt(f2) )
-   Z          = K * ( erfi_0 - erfi_1 )
+   s          = f1 / ( 2.0 * sqrt( fabs(f2) ) )
+   if fabs( s ) <= 5.0 :
+      # Compute analytic normalization constant
+      # only when f1 is not too far away from f2
+      # (otherwise the difference between erfi or erf
+      #  functions becomes numerically unstable)
+      if f2 > 0. :
+         K    = ( sqrt( M_PI ) / (2.0 * sqrt(f2)) ) * exp( -(s*s) )
+         er_1 = sp.erfi( s + sqrt(f2) )
+         er_0 = sp.erfi( s )
+         Z    = K * ( er_1 - er_0 )
+      else :
+         K    = ( sqrt( M_PI ) / (2.0 * sqrt( fabs(f2) )) ) * exp( (s*s) )
+         er_1 = sp.erf( -s + sqrt( fabs(f2) ) )
+         er_0 = sp.erf( -s )
+         Z    = K * ( er_1 - er_0 )
+   else :
+      # Compute discretized version of normalization
+      # constant
+      eps     = 1e-15
+      N       = 10000
+      r_do    = np.asarray( np.arange(0,1.0 + float(1. / float(N)), float(1. / float(N)) ) , dtype=np.float32)
+      r_do[0] = eps
+      r_do[N] = 1.0 - eps
+      r_do    = r_do.copy(order='C')
+      dr      = 1. / float(N)
+      Z       = 0.
+      for pi in range(0,N+1):
+         Z    = Z + ( exp(  ( (f1 * r_do[ pi ]) + (f2 * r_do[ pi ] * r_do[ pi ] )  )  ) * dr )
    for pi in range(0,npoints):
       p[ pi ] = p[ pi ] / Z
-   '''Z          = 0.0
-   for pi in range(0,npoints):
-      Z       = Z + p[ pi ]
-   for pi in range(0,npoints):
-      p[ pi ] = p[ pi ] / Z'''
+   
    return None
 
 # -----------------------------------------------------------------------------------------------

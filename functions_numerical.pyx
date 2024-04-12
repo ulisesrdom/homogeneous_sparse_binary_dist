@@ -2,6 +2,7 @@ import numpy as np
 import functions_sampling as f_samp
 import functions_generic as f_gen
 import functions_special as f_sp
+from scipy import special as sp
 from libc.stdio cimport printf
 from cython.parallel import prange
 from cython import boundscheck, wraparound
@@ -260,6 +261,9 @@ def avg_ml_poly_r( np.ndarray[float,ndim=1,mode="c"] R, int Ns, float f, int m, 
       AVG_ML     = s - log( Z )
    return AVG_ML
 
+# log( prod_i p( x_i ) ) = sum_i log( p(x_i ) ) 
+#                        = sum_i log(exp("" x_i "")) - NS log(Z)
+#                        = 
 def avg_ml_sg_r( np.ndarray[float,ndim=1,mode="c"] R, int Ns, float f, float tau ):
    cdef:
       int i
@@ -271,8 +275,10 @@ def avg_ml_sg_r( np.ndarray[float,ndim=1,mode="c"] R, int Ns, float f, float tau
       s       = s + ( f*( (1. / (1. + (tau * R[ i ]) )) - 1. ) )
    
    x_1        = f / (1. + (tau ))
-   Ei_1       = f_sp.Ei( x_1 )
-   Ei_0       = f_sp.Ei( f )
+   #Ei_1       = f_sp.Ei( x_1 )
+   #Ei_0       = f_sp.Ei( f )
+   Ei_1       = sp.expi( x_1 )
+   Ei_0       = sp.expi( f )
    Z          = ((1. + tau) / tau)*exp( x_1 - f ) - ((f*exp(-f) / tau) * Ei_1)
    Z          = Z - ( (1. / tau) - ((f*exp(-f) / tau) * Ei_0) )
    s          = s / float(Ns)
@@ -296,21 +302,46 @@ def avg_ml_fo_r( np.ndarray[float,ndim=1,mode="c"] R, int Ns, float f ):
 
 def avg_ml_so_r( np.ndarray[float,ndim=1,mode="c"] R, int Ns, float f1, float f2 ):
    cdef:
-      int i
-      double s1,s2,AVG_ML,Z,K,erfi_0,erfi_1
+      int i,N
+      double s,s1,AVG_ML,Z,K,er_0,er_1,dr,eps
    
    AVG_ML     = 0.0
    s1         = 0.0
    for i in range(0,Ns):
-      s1      = s1 + ( -(f1 * R[ i ]) + (f2 * R[i] * R[i] )  )
-   
-   s2         = f1 / ( 2.0 * sqrt(f2) )
-   K          = ( sqrt( M_PI ) / (2.0 * sqrt(f2)) ) * exp( -(s2*s2) )
-   erfi_0     = f_sp.erfi( s2 )
-   erfi_1     = f_sp.erfi( s2 - sqrt(f2) )
-   Z          = K * ( erfi_0 - erfi_1 )
-   
+      s1      = s1 + ( (f1 * R[ i ]) + (f2 * R[i] * R[i] )  )
    s1         = s1 / float(Ns)
+   
+   if fabs( f2 - f1 ) <= 10.0 :
+      # Compute analytic normalization constant
+      # only when f1 is not too far away from f2
+      # (otherwise the difference between erfi or erf
+      #  functions becomes numerically unstable)
+      if f2 > 0. :
+         s    = f1 / ( 2.0 * sqrt(f2) )
+         K    = ( sqrt( M_PI ) / (2.0 * sqrt(f2)) ) * exp( -(s*s) )
+         er_1 = sp.erfi( s + sqrt(f2) )
+         er_0 = sp.erfi( s )
+         Z    = K * ( er_1 - er_0 )
+      else :
+         s    = f1 / ( 2.0 * sqrt( fabs(f2) ) )
+         K    = ( sqrt( M_PI ) / (2.0 * sqrt( fabs(f2) )) ) * exp( (s*s) )
+         er_1 = sp.erf( -s + sqrt( fabs(f2) ) )
+         er_0 = sp.erf( -s )
+         Z    = K * ( er_1 - er_0 )
+   else :
+      # Compute discretized version of normalization
+      # constant
+      eps     = 1e-15
+      N       = 10000
+      r_do    = np.asarray( np.arange(0,1.0 + float(1. / float(N)), float(1. / float(N)) ) , dtype=np.float32)
+      r_do[0] = eps
+      r_do[N] = 1.0 - eps
+      r_do    = r_do.copy(order='C')
+      dr      = 1. / float(N)
+      Z       = 0.
+      for pi in range(0,N+1):
+         Z    = Z + ( exp(  ( (f1 * r_do[ pi ]) + (f2 * r_do[ pi ] * r_do[ pi ] )  )  ) * dr )
+   #print("er0 = {}, er1 = {}, s = {}, K ={}, Z = {}".format(er_0,er_1,s,K,Z))
    AVG_ML     = s1 - log( Z )
    return AVG_ML
 
@@ -349,6 +380,8 @@ def model_fit_polylogarithmic_r(  np.ndarray[float,ndim=1,mode="c"] R, \
    pdf_r                          = pdf_r.copy(order='C')
    eps                            = 0.00001
    conv_thresh                    = 0.5
+   s1                             = 0.0
+   s2                             = 0.0
    # Initialize parameters
    f                              = f_init
    # Iterative optimization
@@ -427,6 +460,8 @@ def model_fit_shifted_geom_r( np.ndarray[float,ndim=1,mode="c"] R, \
    pdf_r                          = pdf_r.copy(order='C')
    eps                            = 0.00001
    conv_thresh                    = 0.5
+   s1                             = 0.0
+   s2                             = 0.0
    # Initialize parameters
    f         = f_init
    # Iterative optimization
@@ -505,6 +540,8 @@ def model_fit_first_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
    pdf_r                          = pdf_r.copy(order='C')
    eps                            = 0.00001
    conv_thresh                    = 0.5
+   s1                             = 0.0
+   s2                             = 0.0
    # Initialize parameters
    f         = f_init
    # Iterative optimization
@@ -584,9 +621,12 @@ def model_fit_second_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
    pdf_r                          = pdf_r.copy(order='C')
    eps                            = 0.00001
    conv_thresh                    = 0.5
+   s1                             = 0.0
+   s2                             = 0.0
+   converged_f1                   = 0
    # Initialize parameters
-   f1        = f_init
-   f2        = f_init
+   f1                             = f_init
+   f2                             = f_init
    # Iterative optimization
    for ite in range(1,MAX_ITE+1):
       converged_f1 = 0
@@ -603,7 +643,7 @@ def model_fit_second_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
          # Collapse batch results
          s1  = 0.0
          for i in range(0,Ns):
-           s1= s1 + ll_batch[ i ]
+           s1= s1 - ll_batch[ i ]
          s1  = s1 / float( Ns )
          
          # Computation of second part of log-likelihood derivative
@@ -616,15 +656,13 @@ def model_fit_second_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
          # Collapse batch results
          s2  = 0.0
          for i in range(0,N+1):
-           s2= s2 + ( pdf_r[ i ] * lZ_der_batch[ i ])
+           s2= s2 - ( pdf_r[ i ] * lZ_der_batch[ i ])
          
          f1  = f1 + (eta1*(s1-s2))
          if np.abs( s1 - s2 ) <= conv_thresh :
             print("   Small gradient reached")
             converged_f1 = 1
             break
-         if f1 <= 0.0 :
-            f1 = eps #0.0
       print("Last gradient magnitude = {}".format( np.abs( s1 - s2 ) ))
       # Locally optimize for the second-order parameter f2
       # ---------------------------------------------------------------------------
@@ -659,10 +697,10 @@ def model_fit_second_ord_r( np.ndarray[float,ndim=1,mode="c"] R, \
             if converged_f1 == 1 :
                ite = MAX_ITE
             break
-         if f2 <= 0 :
-            f2 = eps #0.
-      eta1   = eta1 / (1.0 + (0.0001)*float(ite))
-      eta2   = eta2 / (1.0 + (0.0001)*float(ite))
+      eta1   = eta1 / (1.0 + (0.000000001)*float(ite))
+      eta2   = eta2 / (1.0 + (0.000000001)*float(ite))
+      #eta1   = eta1 / (1.0 + (0.0001)*float(ite))
+      #eta2   = eta2 / (1.0 + (0.0001)*float(ite))
       print("Last gradient magnitude = {}".format( np.abs( s1 - s2 ) ))
       print("model_fit_second_ord_r:: iteration {}, f1={}, f2={}".format(ite,f1,f2))
       if ite == MAX_ITE :
